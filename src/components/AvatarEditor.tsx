@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sparkles, Upload, Loader2, Save, Link as LinkIcon, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Label } from "@/components/ui/label";
@@ -401,8 +402,18 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
           <div className="space-y-6 pb-4">
             {/* Avatar Image Section */}
             <div className="flex flex-col items-center gap-4">
-              {previewUrl && (
-                <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden ring-2 ring-border shadow-lg">
+              <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden ring-2 ring-border shadow-lg">
+                {(generatingImage || uploadingImage || fetchingUrl) ? (
+                  <div className="w-full h-full flex items-center justify-center bg-muted">
+                    <Skeleton className="w-full h-full rounded-full absolute inset-0" />
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                      <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                      <span className="text-xs text-muted-foreground font-medium">
+                        {generatingImage ? 'Generating...' : uploadingImage ? 'Uploading...' : 'Fetching...'}
+                      </span>
+                    </div>
+                  </div>
+                ) : previewUrl ? (
                   <img
                     src={previewUrl}
                     alt={editedAvatar.name}
@@ -410,8 +421,12 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                     style={{ aspectRatio: '1/1' }}
                     key={previewUrl}
                   />
-                </div>
-              )}
+                ) : (
+                  <div className="w-full h-full bg-muted flex items-center justify-center">
+                    <Sparkles className="w-8 h-8 text-muted-foreground" />
+                  </div>
+                )}
+              </div>
               
               <Collapsible open={imageOpen} onOpenChange={setImageOpen} className="w-full">
                 <CollapsibleTrigger asChild>
