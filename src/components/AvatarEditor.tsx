@@ -393,6 +393,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     }
     try {
       new URL(pasteImageUrl);
+      setSearchingImages(false); // Reset any loading state
       setShowImageSearch(true); // Ensure the panel is open to show options
       selectReferenceImage(pasteImageUrl.trim());
       setPasteImageUrl("");
@@ -468,6 +469,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     setShowImageSearch(false);
     setReferenceImages([]);
     setSelectedReferenceUrl(null);
+    setSearchingImages(false); // Reset loading state
   };
 
   const optimizeField = async (field: 'description' | 'personality_prompt') => {
