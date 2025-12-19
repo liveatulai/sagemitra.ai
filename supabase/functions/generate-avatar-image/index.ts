@@ -52,75 +52,20 @@ serve(async (req) => {
     const validatedData = imageGenSchema.parse(body);
     const { prompt, avatarId, referenceImageUrl } = validatedData;
     
-    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
-    if (!GEMINI_API_KEY) {
-      throw new Error('GEMINI_API_KEY not configured');
-    }
-
-    let processedReferenceUrl = referenceImageUrl;
-    let base64ImageData: string | undefined;
-
-    // Validate reference image format - Gemini only supports jpg, jpeg, png, webp
-    if (referenceImageUrl) {
-      const lowerUrl = referenceImageUrl.toLowerCase();
-      const supportedFormats = ['.jpg', '.jpeg', '.png', '.webp'];
-      const isSupported = supportedFormats.some(fmt => lowerUrl.includes(fmt));
-      
-      if (!isSupported) {
-        // Check if it's a GIF or unsupported format
-        if (lowerUrl.includes('.gif') || lowerUrl.includes('.bmp') || lowerUrl.includes('.tiff')) {
-          console.log('Unsupported image format, falling back to text-only generation');
-          processedReferenceUrl = undefined;
-        }
-      }
-
-      // Download the image and convert to base64 to avoid 403 errors
-      if (processedReferenceUrl) {
-        try {
-          console.log('Downloading reference image to convert to base64...');
-          const imageResponse = await fetch(processedReferenceUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'image/*',
-            }
-          });
-
-          if (imageResponse.ok) {
-            const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
-            const arrayBuffer = await imageResponse.arrayBuffer();
-            const uint8Array = new Uint8Array(arrayBuffer);
-            
-            // Convert to base64
-            let binary = '';
-            for (let i = 0; i < uint8Array.length; i++) {
-              binary += String.fromCharCode(uint8Array[i]);
-            }
-            base64ImageData = btoa(binary);
-            console.log('Successfully converted image to base64, size:', base64ImageData.length);
-          } else {
-            console.log('Failed to download reference image:', imageResponse.status, '- falling back to text-only');
-            processedReferenceUrl = undefined;
-          }
-        } catch (downloadError) {
-          console.error('Error downloading reference image:', downloadError);
-          console.log('Falling back to text-only generation');
-          processedReferenceUrl = undefined;
-        }
-      }
+    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+    if (!OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY not configured');
     }
 
     let imagePrompt: string;
 
     // Build the image prompt
-    if (processedReferenceUrl && base64ImageData) {
-      // With reference image - use image editing/transformation
-      console.log('Generating avatar from reference image (base64)');
+    if (referenceImageUrl) {
+      console.log('Generating avatar with reference context for:', prompt);
       
-      imagePrompt = `Transform this reference image into a professional avatar portrait for "${prompt}".
+      imagePrompt = `Create a professional portrait avatar for "${prompt}".
 
-IMPORTANT: Use the person's face from the reference image as the basis.
-
-APPLY THIS STYLE:
+STYLE REQUIREMENTS:
 - Professional studio portrait with warm cinematic color grading
 - Golden undertones, slightly desaturated timeless look
 - Soft vignette effect around edges
@@ -132,9 +77,8 @@ APPLY THIS STYLE:
 - Square format suitable for circular avatar crop
 - Editorial magazine portrait quality
 
-OUTPUT: Single styled portrait matching the avatar aesthetic. No text or borders.`;
+OUTPUT: Single styled portrait. No text or borders.`;
     } else {
-      // Without reference - generate from scratch
       console.log('Generating avatar from text prompt:', prompt);
       
       imagePrompt = `Generate a photorealistic portrait of the REAL historical figure "${prompt}".
@@ -165,67 +109,40 @@ VISUAL STYLE (consistent with existing avatars):
 OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
     }
 
-    // Use Imagen 3 API for image generation
-    const model = "imagen-3.0-generate-002";
+    console.log('Calling OpenAI gpt-image-1 API');
     
-    // Build request body for Imagen API
-    const requestBody: any = {
-      instances: [{
-        prompt: imagePrompt
-      }],
-      parameters: {
-        sampleCount: 1,
-        aspectRatio: "1:1",
-        personGeneration: "allow_adult"
-      }
-    };
-
-    // If we have a reference image, include it
-    if (base64ImageData) {
-      requestBody.instances[0].referenceImages = [{
-        referenceImage: {
-          bytesBase64Encoded: base64ImageData
-        },
-        referenceType: "REFERENCE_TYPE_STYLE"
-      }];
-    }
-
-    console.log('Calling Imagen API with model:', model);
-    
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      }
-    );
+    const response = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-image-1',
+        prompt: imagePrompt,
+        n: 1,
+        size: '1024x1024',
+        quality: 'high',
+      }),
+    });
 
     if (!response.ok) {
       const raw = await response.text();
-      console.error("Imagen generation error:", response.status, raw);
+      console.error("OpenAI image generation error:", response.status, raw);
 
-      // Try to surface retry delay if provided
       let retryAfterSeconds: number | null = null;
-      try {
-        const parsed = JSON.parse(raw);
-        const retryDelay = parsed?.error?.details?.find((d: any) => d?.["@type"] === "type.googleapis.com/google.rpc.RetryInfo")
-          ?.retryDelay as string | undefined;
-        if (retryDelay && typeof retryDelay === "string") {
-          const match = retryDelay.match(/(\d+)/);
-          if (match) retryAfterSeconds = Number(match[1]);
-        }
-      } catch {
-        // ignore json parse errors
+      const retryHeader = response.headers.get('retry-after');
+      if (retryHeader) {
+        retryAfterSeconds = parseInt(retryHeader, 10);
       }
 
       const friendly =
         response.status === 429
-          ? "Imagen rate limit reached. Please wait a moment and try again."
+          ? "Rate limit reached. Please wait a moment and try again."
           : response.status === 403
-            ? "Imagen API access denied (billing/quota may be disabled)."
+            ? "API access denied (billing/quota may be disabled)."
             : response.status === 401
-              ? "Gemini API key is invalid or unauthorized."
+              ? "OpenAI API key is invalid or unauthorized."
               : `Image generation failed (${response.status}).`;
 
       return new Response(
@@ -242,27 +159,30 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
     }
 
     const data = await response.json();
-    console.log('Imagen response structure:', Object.keys(data));
+    console.log('OpenAI response received');
     
-    // Extract image from Imagen response
-    // Imagen returns: { predictions: [{ bytesBase64Encoded: "...", mimeType: "image/png" }] }
-    const predictions = data.predictions || [];
-    let generatedImageData: string | undefined;
+    // gpt-image-1 returns base64 directly
+    const generatedImageData = data.data?.[0]?.b64_json;
+    const imageUrl = data.data?.[0]?.url;
     
-    for (const pred of predictions) {
-      if (pred.bytesBase64Encoded) {
-        generatedImageData = pred.bytesBase64Encoded;
-        break;
+    let imageBuffer: Uint8Array;
+    
+    if (generatedImageData) {
+      // Base64 response
+      imageBuffer = Uint8Array.from(atob(generatedImageData), c => c.charCodeAt(0));
+    } else if (imageUrl) {
+      // URL response - download the image
+      console.log('Downloading generated image from URL');
+      const imageResponse = await fetch(imageUrl);
+      if (!imageResponse.ok) {
+        throw new Error('Failed to download generated image');
       }
-    }
-    
-    if (!generatedImageData) {
-      console.error('No image in Imagen response:', JSON.stringify(data).substring(0, 500));
+      const arrayBuffer = await imageResponse.arrayBuffer();
+      imageBuffer = new Uint8Array(arrayBuffer);
+    } else {
+      console.error('No image in OpenAI response:', JSON.stringify(data).substring(0, 500));
       throw new Error('No image in response');
     }
-
-    // Convert base64 to buffer
-    const imageBuffer = Uint8Array.from(atob(generatedImageData), c => c.charCodeAt(0));
 
     // Upload to storage
     const fileName = `${avatarId || Date.now()}.png`;
