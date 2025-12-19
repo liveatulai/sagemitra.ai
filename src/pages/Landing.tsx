@@ -12,6 +12,13 @@ import einsteinImg from "@/assets/avatars/einstein.jpg";
 import jobsImg from "@/assets/avatars/jobs.jpg";
 import muskImg from "@/assets/avatars/musk.jpg";
 import krishnamurtiImg from "@/assets/avatars/krishnamurti.jpg";
+import dnyaneshwarImg from "@/assets/avatars/dnyaneshwar.jpg";
+import jungImg from "@/assets/avatars/jung.jpg";
+import nanakImg from "@/assets/avatars/nanak.jpg";
+import nisargadattaImg from "@/assets/avatars/nisargadatta.jpg";
+import ramakrishnaImg from "@/assets/avatars/ramakrishna.jpg";
+import ramtirthaImg from "@/assets/avatars/ramtirtha.jpg";
+import zuckerbergImg from "@/assets/avatars/zuckerberg.jpg";
 
 
 export default function Landing() {
@@ -22,11 +29,18 @@ export default function Landing() {
   const avatarPreviews = [
     { name: "Buddha", image: buddhaImg },
     { name: "Ramana", image: ramanaImg },
+    { name: "Nisargadatta", image: nisargadattaImg },
+    { name: "Ramakrishna", image: ramakrishnaImg },
+    { name: "Dnyaneshwar", image: dnyaneshwarImg },
+    { name: "Krishnamurti", image: krishnamurtiImg },
+    { name: "Nanak", image: nanakImg },
+    { name: "Ramtirtha", image: ramtirthaImg },
     { name: "Tesla", image: teslaImg },
     { name: "Einstein", image: einsteinImg },
+    { name: "Jung", image: jungImg },
     { name: "Jobs", image: jobsImg },
     { name: "Musk", image: muskImg },
-    { name: "Krishnamurti", image: krishnamurtiImg }
+    { name: "Zuckerberg", image: zuckerbergImg }
   ];
 
   const features = [
