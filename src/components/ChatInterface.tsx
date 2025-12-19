@@ -168,27 +168,32 @@ export default function ChatInterface() {
       console.log("Avatar loaded:", avatarData);
       setAvatar(avatarData);
 
-      // Load messages with reactions
-      const { data: msgs, error: msgsError } = await supabase
-        .from("chat_messages")
-        .select("*")
-        .eq("session_id", sessionId)
-        .order("created_at", { ascending: true });
-
-      console.log("Messages loaded:", msgs, msgsError);
-
-      if (msgs) {
-        setMessages(msgs.map(m => ({
-          ...m,
-          role: m.role as "user" | "assistant" | "gesture",
-          reactions: (m.reactions as any) || []
-        })) as Message[]);
-      }
+      await loadMessages(sessionId);
       setLoading(false);
     } catch (error) {
       console.error("Unexpected error loading session:", error);
       toast.error("Failed to load chat session");
       navigate("/avatars");
+    }
+  };
+
+  const loadMessages = async (sid: string) => {
+    const { data: msgs, error: msgsError } = await supabase
+      .from("chat_messages")
+      .select("*")
+      .eq("session_id", sid)
+      .order("created_at", { ascending: true });
+
+    console.log("Messages loaded:", msgs, msgsError);
+
+    if (msgs) {
+      setMessages(
+        msgs.map((m) => ({
+          ...(m as any),
+          role: (m as any).role as "user" | "assistant" | "gesture",
+          reactions: ((m as any).reactions as any) || [],
+        })) as Message[]
+      );
     }
   };
 
@@ -210,12 +215,15 @@ export default function ChatInterface() {
           const newMsg = payload.new as Message;
           setMessages((prev) => {
             // Avoid duplicates
-            if (prev.some(m => m.id === newMsg.id)) return prev;
-            return [...prev, {
-              ...newMsg,
-              role: newMsg.role as "user" | "assistant" | "gesture",
-              reactions: (newMsg.reactions as any) || []
-            }];
+            if (prev.some((m) => m.id === newMsg.id)) return prev;
+            return [
+              ...prev,
+              {
+                ...newMsg,
+                role: newMsg.role as "user" | "assistant" | "gesture",
+                reactions: (newMsg.reactions as any) || [],
+              },
+            ];
           });
         }
       )
@@ -271,6 +279,7 @@ export default function ChatInterface() {
       
       if (response.ok && data?.success) {
         console.log("Welcome message sent successfully");
+        await loadMessages(sessionId);
       } else {
         console.error("Welcome message failed:", data);
       }
@@ -311,6 +320,9 @@ export default function ChatInterface() {
         console.error("Error saving user message:", insertError);
         throw new Error("Failed to save your message");
       }
+
+      // Ensure UI shows the user message even if realtime is delayed
+      await loadMessages(sessionId);
 
       // Get user session token
       const { data: { session } } = await supabase.auth.getSession();
@@ -366,6 +378,9 @@ export default function ChatInterface() {
         .from("chat_sessions")
         .update({ updated_at: new Date().toISOString() })
         .eq("id", sessionId);
+
+      // Ensure assistant message is visible even if realtime is delayed
+      await loadMessages(sessionId);
     } catch (error: any) {
       console.error("Send message error:", error);
       toast.error(error.message || "Failed to send message. Please try again.");
