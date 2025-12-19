@@ -69,98 +69,17 @@ serve(async (req) => {
 
     const valueToOptimize = current_value?.trim() || "";
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     
-    if (!LOVABLE_API_KEY && !GEMINI_API_KEY && !OPENAI_API_KEY) {
+    if (!GEMINI_API_KEY && !OPENAI_API_KEY) {
       console.error("No AI API keys configured");
       throw new Error("SERVICE_UNAVAILABLE");
     }
 
     console.log("Optimizing avatar:", name);
 
-    // Helper function to call Lovable AI (Tier 1 - Recommended)
-    async function callLovableAI(prompt: string): Promise<string | undefined> {
-      console.log("Calling Lovable AI (google/gemini-2.5-flash)...");
-      
-      try {
-        const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
-            messages: [
-              {
-                role: "user",
-                content: prompt,
-              },
-            ],
-          }),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error("Lovable AI error:", response.status, errorText);
-          
-          if (response.status === 429) {
-            throw { status: 429, message: "Lovable AI rate limit exceeded" };
-          }
-          if (response.status === 402) {
-            throw { status: 402, message: "Lovable AI quota exceeded" };
-          }
-          
-          throw new Error(`Lovable AI error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        return data.choices?.[0]?.message?.content;
-      } catch (error: any) {
-        console.error("Lovable AI failed:", error);
-        throw error;
-      }
-    }
-
-    // Helper function to call OpenAI API (Tier 3 - Last fallback)
-    async function callOpenAI(prompt: string): Promise<string> {
-      console.log("Calling OpenAI API (final fallback)...");
-      
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-5-mini-2025-08-07",
-          messages: [
-            {
-              role: "user",
-              content: prompt,
-            },
-          ],
-          max_completion_tokens: 8192,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("OpenAI API error:", response.status, errorText);
-        throw new Error(`OpenAI API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content;
-      if (!content) {
-        throw new Error("No content from OpenAI");
-      }
-      return content;
-    }
-
-    // Helper function to call Gemini API with retry logic (Tier 2 - User's Gemini API)
+    // Helper function to call Gemini API with retry logic (Tier 1 - User's Gemini API)
     async function callGeminiWithRetry(prompt: string, maxRetries = 3): Promise<any> {
       let lastError: any = null;
       
@@ -168,21 +87,11 @@ serve(async (req) => {
         try {
           console.log(`Gemini API attempt ${attempt + 1}/${maxRetries}`);
           
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`, {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              contents: [
-                {
-                  parts: [
-                    {
-                      text: prompt,
-                    },
-                  ],
-                },
-              ],
+              contents: [{ parts: [{ text: prompt }] }],
               generationConfig: {
                 temperature: 1,
                 topK: 40,
@@ -265,6 +174,37 @@ serve(async (req) => {
       throw lastError;
     }
 
+    // Helper function to call OpenAI API (Tier 2 - Fallback)
+    async function callOpenAI(prompt: string): Promise<string> {
+      console.log("Calling OpenAI API (fallback)...");
+      
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: 8192,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("OpenAI API error:", response.status, errorText);
+        throw new Error(`OpenAI API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new Error("No content from OpenAI");
+      }
+      return content;
+    }
+
     // Build field-specific optimization prompt
     let optimizationPrompt: string;
     
@@ -317,27 +257,14 @@ Return ONLY a valid JSON object (no markdown, no explanation):
 
     console.log(`Optimizing ${field} for avatar: ${name}`);
 
-    // Three-tier fallback system
+    // Two-tier fallback system: Gemini first, then OpenAI
     let content: string | undefined;
     const errors: Array<{ service: string; error: any }> = [];
     
-    // Tier 1: Try Lovable AI first (recommended - no API key management needed)
-    if (LOVABLE_API_KEY) {
+    // Tier 1: Try user's Gemini API first
+    if (GEMINI_API_KEY) {
       try {
-        content = await callLovableAI(optimizationPrompt);
-        console.log("✅ Successfully used Lovable AI");
-      } catch (error: any) {
-        console.error("❌ Lovable AI failed:", error);
-        errors.push({ service: "Lovable AI", error });
-      }
-    } else {
-      console.log("⚠️ LOVABLE_API_KEY not configured");
-    }
-    
-    // Tier 2: Try user's Gemini API if Lovable AI failed
-    if (!content && GEMINI_API_KEY) {
-      try {
-        console.log("Attempting user's Gemini API (Tier 2)...");
+        console.log("Attempting Gemini API (Tier 1)...");
         const aiData = await callGeminiWithRetry(optimizationPrompt);
         content = aiData.candidates?.[0]?.content?.parts?.[0]?.text;
         console.log("✅ Successfully used Gemini API");
@@ -345,14 +272,14 @@ Return ONLY a valid JSON object (no markdown, no explanation):
         console.error("❌ Gemini API failed:", error);
         errors.push({ service: "Gemini API", error });
       }
-    } else if (!content) {
+    } else {
       console.log("⚠️ GEMINI_API_KEY not configured");
     }
     
-    // Tier 3: Try OpenAI as final fallback
+    // Tier 2: Try OpenAI as fallback
     if (!content && OPENAI_API_KEY) {
       try {
-        console.log("Attempting OpenAI (Tier 3 - final fallback)...");
+        console.log("Attempting OpenAI (Tier 2 - fallback)...");
         content = await callOpenAI(optimizationPrompt);
         console.log("✅ Successfully used OpenAI");
       } catch (error: any) {
@@ -370,9 +297,8 @@ Return ONLY a valid JSON object (no markdown, no explanation):
     
     // If all tiers failed, return appropriate error
     if (!content) {
-      // Check if any of the errors are rate limit or quota errors
+      // Check if any of the errors are rate limit errors
       const rateLimitError = errors.find(e => e.error?.status === 429);
-      const quotaError = errors.find(e => e.error?.status === 402);
       
       if (rateLimitError) {
         return new Response(
@@ -383,17 +309,6 @@ Return ONLY a valid JSON object (no markdown, no explanation):
             details: errors.map(e => ({ service: e.service, error: e.error.message || String(e.error) }))
           }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      
-      if (quotaError) {
-        return new Response(
-          JSON.stringify({ 
-            error: `${quotaError.service} quota exceeded. Please add credits to your Lovable workspace or upgrade your API plans.`,
-            code: "QUOTA_EXCEEDED",
-            details: errors.map(e => ({ service: e.service, error: e.error.message || String(e.error) }))
-          }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       

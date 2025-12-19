@@ -23,7 +23,7 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -77,29 +77,20 @@ serve(async (req) => {
       .map((m) => `${m.role === "user" ? "User" : "Avatar"}: ${m.content}`)
       .join("\n");
 
-    // Use Lovable AI to summarize
-    if (!lovableApiKey) {
-      throw new Error("LOVABLE_API_KEY not configured");
+    // Use Gemini API to summarize
+    if (!geminiApiKey) {
+      throw new Error("GEMINI_API_KEY not configured");
     }
 
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const systemPrompt = "You are an expert at creating concise, emotionally-aware conversation summaries. Summarize the key emotional themes, insights, and unresolved topics from conversations in 150-200 characters. Focus on continuity for future sessions.";
+
+    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert at creating concise, emotionally-aware conversation summaries. Summarize the key emotional themes, insights, and unresolved topics from conversations in 150-200 characters. Focus on continuity for future sessions.",
-          },
-          {
-            role: "user",
-            content: `Summarize this conversation:\n\n${conversationText}`,
-          },
-        ],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: "user", parts: [{ text: `Summarize this conversation:\n\n${conversationText}` }] }],
+        generationConfig: { temperature: 0.5, maxOutputTokens: 200 },
       }),
     });
 
@@ -108,7 +99,7 @@ serve(async (req) => {
     }
 
     const aiData = await aiResponse.json();
-    const summary = aiData.choices[0]?.message?.content || "";
+    const summary = aiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     // Detect emotional context
     const emotionalKeywords = {

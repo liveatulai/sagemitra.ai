@@ -54,37 +54,27 @@ serve(async (req) => {
       }
     }
 
-    // Use Lovable AI for more sophisticated sentiment analysis
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    // Use Gemini API for more sophisticated sentiment analysis
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     let sentimentScore = 0.5;
 
-    if (LOVABLE_API_KEY) {
+    if (GEMINI_API_KEY) {
       try {
-        const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, {
           method: "POST",
-          headers: {
-            "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
-            messages: [
-              {
-                role: "system",
-                content: "Analyze the emotional sentiment of the following text. Return ONLY a number between -1 (very negative) and 1 (very positive). Example: 0.8"
-              },
-              {
-                role: "user",
-                content: messageText
-              }
-            ],
-            temperature: 0.3
+            systemInstruction: { 
+              parts: [{ text: "Analyze the emotional sentiment of the following text. Return ONLY a number between -1 (very negative) and 1 (very positive). Example: 0.8" }] 
+            },
+            contents: [{ role: "user", parts: [{ text: messageText }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 10 },
           }),
         });
 
         if (aiResponse.ok) {
           const aiData = await aiResponse.json();
-          const scoreText = aiData.choices?.[0]?.message?.content?.trim();
+          const scoreText = aiData.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
           const parsedScore = parseFloat(scoreText);
           if (!isNaN(parsedScore)) {
             sentimentScore = Math.max(-1, Math.min(1, parsedScore));
