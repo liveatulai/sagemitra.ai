@@ -54,15 +54,22 @@ interface AvatarEditorProps {
 
 export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: AvatarEditorProps) {
   const [editedAvatar, setEditedAvatar] = useState(avatar);
-  const [loading, setLoading] = useState(false);
   const [imagePrompt, setImagePrompt] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [previewUrl, setPreviewUrl] = useState(avatar.image_url || "");
   const [imageOpen, setImageOpen] = useState(false);
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(true);
+  
+  // Separate loading states for different actions
+  const [generatingImage, setGeneratingImage] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [fetchingUrl, setFetchingUrl] = useState(false);
+  const [savingChanges, setSavingChanges] = useState(false);
   const [optimizingDescription, setOptimizingDescription] = useState(false);
   const [optimizingPersonality, setOptimizingPersonality] = useState(false);
+  const [fetchingKnowledge, setFetchingKnowledge] = useState(false);
+  const [processingDocs, setProcessingDocs] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -79,7 +86,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
       return;
     }
 
-    setLoading(true);
+    setGeneratingImage(true);
     try {
       const { data, error } = await supabase.functions.invoke('generate-avatar-image', {
         body: { 
@@ -111,7 +118,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
       toast.error(errorMessage);
     } finally {
       if (isMounted) {
-        setLoading(false);
+        setGeneratingImage(false);
       }
     }
   };
@@ -120,13 +127,13 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setLoading(true);
+    setUploadingImage(true);
     try {
       // Get the current user's ID for folder-based storage
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         toast.error("Please log in to upload images");
-        setLoading(false);
+        setUploadingImage(false);
         return;
       }
 
@@ -152,7 +159,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
       console.error('Error uploading image:', error);
       toast.error(error.message || "Failed to upload image");
     } finally {
-      setLoading(false);
+      setUploadingImage(false);
     }
   };
 
@@ -164,7 +171,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
       return;
     }
 
-    setLoading(true);
+    setFetchingUrl(true);
     try {
       const { data, error } = await supabase.functions.invoke('fetch-image-from-url', {
         body: { 
@@ -185,21 +192,21 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     } catch (error: any) {
       toast.error("Failed to fetch image from URL");
     } finally {
-      setLoading(false);
+      setFetchingUrl(false);
     }
   };
 
   const optimizeField = async (field: 'description' | 'personality_prompt') => {
     if (!isMounted) return;
 
-    const setLoading = field === 'description' ? setOptimizingDescription : setOptimizingPersonality;
-    setLoading(true);
+    const setFieldLoading = field === 'description' ? setOptimizingDescription : setOptimizingPersonality;
+    setFieldLoading(true);
     
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         toast.error("Please log in again to use AI optimization");
-        setLoading(false);
+        setFieldLoading(false);
         return;
       }
 
@@ -224,7 +231,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
       );
 
       if (!isMounted) {
-        setLoading(false);
+        setFieldLoading(false);
         return;
       }
 
@@ -245,13 +252,13 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
         } else {
           toast.error(errorMessage);
         }
-        setLoading(false);
+        setFieldLoading(false);
         return;
       }
 
       if (!data || !data.optimized_value) {
         toast.error("Received invalid response from AI. Please try again.");
-        setLoading(false);
+        setFieldLoading(false);
         return;
       }
 
@@ -263,12 +270,12 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
         setEditedAvatar({ ...editedAvatar, personality_prompt: data.optimized_value, is_optimized: true });
         toast.success("Personality prompt optimized!");
       }
-      setLoading(false);
+      setFieldLoading(false);
     } catch (error: any) {
       console.error(`Error optimizing ${field}:`, error);
       if (isMounted) {
         toast.error(error?.message || "An unexpected error occurred.");
-        setLoading(false);
+        setFieldLoading(false);
       }
     }
   };
@@ -288,7 +295,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
       return;
     }
 
-    setLoading(true);
+    setSavingChanges(true);
     try {
       // Check if this is a default avatar or user avatar
       const isUserAvatar = 'user_id' in avatar;
@@ -357,7 +364,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
       console.error('Error in saveChanges:', error);
       toast.error(error.message || "Failed to save changes. Please try again.");
     } finally {
-      setLoading(false);
+      setSavingChanges(false);
     }
   };
 
@@ -369,7 +376,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     
     if (!confirm("Delete this avatar permanently?")) return;
 
-    setLoading(true);
+    setSavingChanges(true);
     try {
       await supabase.from('user_avatars').update({ deleted_at: new Date().toISOString() }).eq('id', avatar.id);
       toast.success("Avatar deleted");
@@ -378,7 +385,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     } catch (error: any) {
       toast.error("Failed to delete");
     } finally {
-      setLoading(false);
+      setSavingChanges(false);
     }
   };
 
@@ -423,8 +430,8 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                       onKeyDown={(e) => e.key === "Enter" && regenerateImage()}
                       className="flex-1 text-sm"
                     />
-                    <Button onClick={regenerateImage} disabled={loading || !imagePrompt.trim()} size="sm">
-                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    <Button onClick={regenerateImage} disabled={generatingImage || !imagePrompt.trim()} size="sm">
+                      {generatingImage ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                     </Button>
                   </div>
 
@@ -437,14 +444,14 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                       onKeyDown={(e) => e.key === "Enter" && fetchImageFromUrl()}
                       className="flex-1 text-sm"
                     />
-                    <Button onClick={fetchImageFromUrl} disabled={loading || !imageUrl.trim()} size="sm">
-                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LinkIcon className="w-4 h-4" />}
+                    <Button onClick={fetchImageFromUrl} disabled={fetchingUrl || !imageUrl.trim()} size="sm">
+                      {fetchingUrl ? <Loader2 className="w-4 h-4 animate-spin" /> : <LinkIcon className="w-4 h-4" />}
                     </Button>
                   </div>
                   
                   {/* File Upload */}
                   <label className="block">
-                    <Button variant="outline" className="w-full" disabled={loading} size="sm" asChild>
+                    <Button variant="outline" className="w-full" disabled={uploadingImage} size="sm" asChild>
                       <span>
                         <Upload className="w-4 h-4 mr-2" />
                         Upload Custom Image
@@ -602,7 +609,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                             return;
                           }
                           
-                          setLoading(true);
+                          setFetchingKnowledge(true);
                           try {
                             const { data, error } = await supabase.functions.invoke('fetch-knowledge-from-url', {
                               body: { url: validated.data }
@@ -619,12 +626,12 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                           } catch (error: any) {
                             toast.error("Failed to fetch website content");
                           } finally {
-                            setLoading(false);
+                            setFetchingKnowledge(false);
                           }
                         }}
-                        disabled={loading || !editedAvatar.knowledge_url?.trim()}
+                        disabled={fetchingKnowledge || !editedAvatar.knowledge_url?.trim()}
                       >
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Extract"}
+                        {fetchingKnowledge ? <Loader2 className="w-4 h-4 animate-spin" /> : "Extract"}
                       </Button>
                     </div>
                   </div>
@@ -633,7 +640,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                   <div className="space-y-2">
                     <Label className="text-sm font-medium">Upload Documents</Label>
                     <label className="block">
-                      <Button variant="outline" className="w-full" disabled={loading} size="sm" asChild>
+                      <Button variant="outline" className="w-full" disabled={processingDocs} size="sm" asChild>
                         <span>
                           <Upload className="w-4 h-4 mr-2" />
                           Upload PDF, TXT, MD, DOCX
@@ -647,7 +654,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                           const files = Array.from(e.target.files || []);
                           if (files.length === 0) return;
                           
-                          setLoading(true);
+                          setProcessingDocs(true);
                           try {
                             let allContent = "";
                             
@@ -690,7 +697,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                             console.error('Error processing files:', error);
                             toast.error("Failed to process files");
                           } finally {
-                            setLoading(false);
+                            setProcessingDocs(false);
                           }
                         }}
                         className="hidden" 
@@ -728,11 +735,11 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
             </Button>
             <Button 
               onClick={saveChanges} 
-              disabled={loading || optimizingDescription || optimizingPersonality} 
+              disabled={savingChanges || optimizingDescription || optimizingPersonality || generatingImage} 
               className="w-full sm:flex-1"
               size="lg"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+              {savingChanges ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
               Save Changes
             </Button>
           </div>
