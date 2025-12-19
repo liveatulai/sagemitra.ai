@@ -521,7 +521,7 @@ export default function Admin() {
   if (!isAdmin) return null;
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="min-h-screen bg-background">
       {/* Sidebar */}
       <AdminSidebar 
         activeTab={activeTab}
@@ -530,15 +530,15 @@ export default function Admin() {
         onToggle={() => setSidebarOpen(!sidebarOpen)}
       />
 
-      {/* Main Content */}
-      <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'lg:ml-64' : 'lg:ml-16'}`}>
-        <div className="container mx-auto p-4 sm:p-6 max-w-7xl">
-          {/* Header */}
-          <div className="flex items-center gap-3 mb-8">
-            <Shield className="h-8 w-8 text-primary" />
+      {/* Main Content - only offset on large screens */}
+      <main className={`transition-all duration-300 ${sidebarOpen ? 'lg:ml-64' : 'lg:ml-16'}`}>
+        <div className="p-4 sm:p-6 max-w-7xl mx-auto">
+          {/* Header with mobile menu toggle */}
+          <div className="flex items-center gap-3 mb-6 sm:mb-8 pl-12 lg:pl-0">
+            <Shield className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold">Admin Dashboard</h1>
-              <p className="text-sm text-muted-foreground">Manage avatars, users, feedback, and credits</p>
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">Admin Dashboard</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground hidden sm:block">Manage avatars, users, feedback, and credits</p>
             </div>
           </div>
 
