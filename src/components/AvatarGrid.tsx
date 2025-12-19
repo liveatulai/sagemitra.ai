@@ -27,6 +27,7 @@ import muskImg from "@/assets/avatars/musk.jpg";
 import jobsImg from "@/assets/avatars/jobs.jpg";
 import zuckerbergImg from "@/assets/avatars/zuckerberg.jpg";
 import krishnamurtiImg from "@/assets/avatars/krishnamurti.jpg";
+import logo from "@/assets/logo.png";
 
 interface Avatar {
   id: string;
@@ -328,11 +329,14 @@ export default function AvatarGrid() {
         <header className="sticky top-0 z-50 bg-background/95 backdrop-blur-xl border-b border-border/50 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 shadow-sm">
           <div className="flex items-center justify-between h-14 sm:h-16">
             {/* Logo */}
-            <div className="flex-1 min-w-0">
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                SageMitra
-              </h1>
-              <p className="text-[10px] text-muted-foreground hidden sm:block">Chat with legendary minds</p>
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <img src={logo} alt="SageMitra" className="h-8 w-8 sm:h-9 sm:w-9" />
+              <div>
+                <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                  SageMitra
+                </h1>
+                <p className="text-[10px] text-muted-foreground hidden sm:block">Chat with legendary minds</p>
+              </div>
             </div>
             
             {/* Actions - Compact */}
