@@ -86,7 +86,7 @@ Single photorealistic portrait. No text, watermarks, or borders.`;
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${GEMINI_API_KEY}`;
 
     let response: Response | null = null;
-    let lastRawError = '';
+    let lastRetryAfterHeader: string | null = null;
 
     for (let attempt = 0; attempt < 3; attempt++) {
       response = await fetch(endpoint, {
@@ -111,13 +111,14 @@ Single photorealistic portrait. No text, watermarks, or borders.`;
       // Backoff with jitter (0.5s, 1.5s, 3.5s approx)
       const baseDelayMs = [500, 1500, 3500][attempt] ?? 3500;
       const jitterMs = Math.floor(Math.random() * 250);
-      const retryAfterHeader = response.headers.get('retry-after');
-      const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : null;
+      lastRetryAfterHeader = response.headers.get('retry-after');
+      const retryAfterSeconds = lastRetryAfterHeader ? Number(lastRetryAfterHeader) : null;
       const delayMs = retryAfterSeconds && Number.isFinite(retryAfterSeconds)
         ? Math.max(baseDelayMs, retryAfterSeconds * 1000)
         : baseDelayMs + jitterMs;
 
-      lastRawError = await response.text().catch(() => '');
+      // Consume body to allow retry (discard content)
+      await response.text().catch(() => {});
       console.warn(`Gemini 429 rate limit (attempt ${attempt + 1}/3). Waiting ${delayMs}ms.`);
       await sleep(delayMs);
     }
@@ -129,20 +130,20 @@ Single photorealistic portrait. No text, watermarks, or borders.`;
       );
     }
 
+    // Read body once after loop
+    const responseText = await response.text();
+
     if (!response.ok) {
-      const raw = await response.text();
-      console.error("Gemini API error:", response.status, raw);
+      console.error("Gemini API error:", response.status, responseText);
 
       if (response.status === 429) {
         // Provide a hint to the client for nicer UX
-        const retryAfterHeader = response.headers.get('retry-after');
-        const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : 5;
+        const retryAfterSeconds = lastRetryAfterHeader ? Number(lastRetryAfterHeader) : 5;
 
         return new Response(
           JSON.stringify({
             error: "Rate limit reached. Please try again in a moment.",
             retryAfterSeconds: Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : 5,
-            raw: lastRawError || raw,
           }),
           { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -157,7 +158,7 @@ Single photorealistic portrait. No text, watermarks, or borders.`;
 
       let errorMessage = `Image generation failed (${response.status}).`;
       try {
-        const parsed = JSON.parse(raw);
+        const parsed = JSON.parse(responseText);
         if (parsed?.error?.message) {
           errorMessage = parsed.error.message;
         }
@@ -169,7 +170,7 @@ Single photorealistic portrait. No text, watermarks, or borders.`;
       );
     }
 
-    const data = await response.json();
+    const data = JSON.parse(responseText);
     console.log('Gemini response received');
 
     // Extract image from Gemini response
