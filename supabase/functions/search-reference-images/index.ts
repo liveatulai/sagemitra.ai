@@ -93,10 +93,13 @@ serve(async (req) => {
     const seenUrls = new Set<string>();
 
     // Common image extensions
-    const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
-    const isImageUrl = (url: string) => {
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+    const isDirectImageUrl = (url: string) => {
       const lower = url.toLowerCase();
-      return imageExtensions.some(ext => lower.includes(ext));
+      // Must have image extension AND not be a Wikipedia file page
+      const hasImageExt = imageExtensions.some(ext => lower.includes(ext));
+      const isWikiFilePage = lower.includes('wikipedia.org/wiki/file:');
+      return hasImageExt && !isWikiFilePage;
     };
 
     // Check if URL is from a trusted source
@@ -121,7 +124,7 @@ serve(async (req) => {
         // Check metadata for og:image first (usually high quality)
         if (result.metadata?.ogImage && !seenUrls.has(result.metadata.ogImage)) {
           const url = result.metadata.ogImage;
-          if (isImageUrl(url)) {
+          if (isDirectImageUrl(url)) {
             seenUrls.add(url);
             images.push({
               url,
@@ -134,7 +137,7 @@ serve(async (req) => {
         // Check links from scraped pages
         if (result.links && Array.isArray(result.links)) {
           for (const link of result.links) {
-            if (isImageUrl(link) && !seenUrls.has(link)) {
+            if (isDirectImageUrl(link) && !seenUrls.has(link)) {
               // Filter for likely portrait/face images
               const lower = link.toLowerCase();
               if (lower.includes('portrait') || lower.includes('photo') || 
