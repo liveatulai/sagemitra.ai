@@ -215,6 +215,16 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     setShowImageSearch(true);
     setReferenceImages([]);
 
+    // Build accurate search query using name, title, and description
+    const searchParts = [editedAvatar.name];
+    if (editedAvatar.title) searchParts.push(editedAvatar.title);
+    if (editedAvatar.description) {
+      // Take first 100 chars of description for context
+      const shortDesc = editedAvatar.description.substring(0, 100);
+      searchParts.push(shortDesc);
+    }
+    const searchQuery = searchParts.join(' ').trim();
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -223,7 +233,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
       }
 
       const { data, error } = await supabase.functions.invoke('search-reference-images', {
-        body: { query: editedAvatar.name }
+        body: { query: searchQuery }
       });
 
       if (error) throw error;

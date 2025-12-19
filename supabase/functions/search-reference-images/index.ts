@@ -30,8 +30,8 @@ serve(async (req) => {
       );
     }
 
-    // Search for portrait images of the person
-    const searchQuery = `${query} portrait photo face`;
+    // Search for portrait images of the person with high accuracy
+    const searchQuery = `${query} official portrait photo high quality`;
     console.log('Searching for reference images:', searchQuery);
 
     const response = await fetch('https://api.firecrawl.dev/v1/search', {
