@@ -1,0 +1,772 @@
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sparkles, Upload, Loader2, Save, Link as LinkIcon, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { toast } from "sonner";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Label } from "@/components/ui/label";
+import OptimizePreviewModal from "./OptimizePreviewModal";
+import SafeComponent from "./SafeComponent";
+import VoiceUploader from "./VoiceUploader";
+import { z } from "zod";
+
+const avatarSchema = z.object({
+  name: z.string()
+    .trim()
+    .min(1, "Name is required")
+    .max(100, "Name must be less than 100 characters"),
+  title: z.string()
+    .max(150, "Title must be less than 150 characters")
+    .optional(),
+  description: z.string()
+    .max(1000, "Description must be less than 1000 characters")
+    .optional(),
+  personality_prompt: z.string()
+    .trim()
+    .min(1, "Personality prompt is required")
+    .max(10000, "Personality prompt must be less than 10,000 characters"),
+  knowledge_base: z.string()
+    .max(50000, "Knowledge base must be less than 50,000 characters")
+    .optional()
+});
+
+const imagePromptSchema = z.string()
+  .trim()
+  .min(1, "Image prompt is required")
+  .max(500, "Image prompt must be less than 500 characters");
+
+const urlSchema = z.string()
+  .trim()
+  .url("Please enter a valid URL")
+  .max(2048, "URL is too long");
+
+interface AvatarEditorProps {
+  avatar: any;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaved?: () => void;
+}
+
+export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: AvatarEditorProps) {
+  const [editedAvatar, setEditedAvatar] = useState(avatar);
+  const [loading, setLoading] = useState(false);
+  const [imagePrompt, setImagePrompt] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [previewUrl, setPreviewUrl] = useState(avatar.image_url || "");
+  const [optimizedData, setOptimizedData] = useState<any>(null);
+  const [showOptimizeModal, setShowOptimizeModal] = useState(false);
+  const [imageOpen, setImageOpen] = useState(false);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [isMounted, setIsMounted] = useState(true);
+
+  useEffect(() => {
+    setIsMounted(true);
+    return () => {
+      setIsMounted(false);
+    };
+  }, []);
+
+  const regenerateImage = async () => {
+    const validated = imagePromptSchema.safeParse(imagePrompt);
+    
+    if (!validated.success) {
+      toast.error(validated.error.errors[0].message);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-avatar-image', {
+        body: { 
+          prompt: validated.data,
+          avatarId: avatar.id
+        }
+      });
+
+      if (!isMounted) return;
+
+      if (error) {
+        console.error('Image generation error:', error);
+        const errorMessage = error.message || data?.error || "Failed to regenerate image";
+        toast.error(errorMessage);
+        return;
+      }
+
+      if (data?.imageUrl) {
+        const newUrl = `${data.imageUrl}?t=${Date.now()}`;
+        setEditedAvatar({ ...editedAvatar, image_url: newUrl, image_source: 'ai-generated' });
+        setPreviewUrl(newUrl);
+        toast.success("Image regenerated successfully!");
+        setImagePrompt("");
+      }
+    } catch (error: any) {
+      console.error('Error in regenerateImage:', error);
+      if (!isMounted) return;
+      const errorMessage = error.context?.body?.error || error.message || "Failed to regenerate image";
+      toast.error(errorMessage);
+    } finally {
+      if (isMounted) {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+    try {
+      // Get the current user's ID for folder-based storage
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("Please log in to upload images");
+        setLoading(false);
+        return;
+      }
+
+      const fileName = `${avatar.id}-${Date.now()}.png`;
+      // Use user's ID as folder name for RLS compliance
+      const filePath = `${user.id}/${fileName}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('avatar-images')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatar-images')
+        .getPublicUrl(filePath);
+      
+      const newUrl = `${publicUrl}?t=${Date.now()}`;
+      setEditedAvatar({ ...editedAvatar, image_url: newUrl, image_source: 'upload' });
+      setPreviewUrl(newUrl);
+      toast.success("Image uploaded successfully!");
+    } catch (error: any) {
+      console.error('Error uploading image:', error);
+      toast.error(error.message || "Failed to upload image");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchImageFromUrl = async () => {
+    const validated = urlSchema.safeParse(imageUrl);
+    
+    if (!validated.success) {
+      toast.error(validated.error.errors[0].message);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('fetch-image-from-url', {
+        body: { 
+          imageUrl: validated.data,
+          avatarId: avatar.id
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.imageUrl) {
+        const newUrl = `${data.imageUrl}?t=${Date.now()}`;
+        setEditedAvatar({ ...editedAvatar, image_url: newUrl, image_source: 'url-import' });
+        setPreviewUrl(newUrl);
+        toast.success("Image imported successfully!");
+        setImageUrl("");
+      }
+    } catch (error: any) {
+      toast.error("Failed to fetch image from URL");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const optimizeWithAI = async () => {
+    if (!isMounted) {
+      console.log('Component not mounted, aborting optimize');
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      // Get user session token for authentication
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("Please log in again to use AI optimization");
+        setLoading(false);
+        return;
+      }
+
+      // Use fetch directly to get proper error responses
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/optimize-avatar`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            name: editedAvatar.name,
+            title: editedAvatar.title,
+            description: editedAvatar.description || "",
+            personality_prompt: editedAvatar.personality_prompt,
+            knowledge_base: editedAvatar.knowledge_base || ""
+          })
+        }
+      );
+
+      if (!isMounted) {
+        console.log('Component unmounted during request');
+        setLoading(false);
+        return;
+      }
+
+      const data = await response.json();
+      console.log('Optimize response:', { status: response.status, data, isMounted });
+
+      // Handle non-2xx responses
+      if (!response.ok) {
+        console.error('Optimization error:', { status: response.status, data });
+        
+        const errorMessage = data?.error || "Failed to optimize avatar";
+        const errorCode = data?.code;
+        const retryAfter = data?.retryAfter;
+        
+        // Handle specific error codes
+        if (errorCode === 'E005' || response.status === 402 || errorMessage.includes('Insufficient credits')) {
+          toast.error("Insufficient credits for AI optimization. Please add credits to your workspace in Settings → Workspace → Usage.");
+        } else if (errorCode === 'RATE_LIMIT_EXCEEDED' || errorCode === 'E004' || response.status === 429) {
+          // Show countdown timer for rate limit errors
+          if (retryAfter && typeof retryAfter === 'number') {
+            const retryMessage = retryAfter > 60 
+              ? `Rate limit exceeded. Please wait ${Math.ceil(retryAfter / 60)} minute(s) and try again.`
+              : `Rate limit exceeded. Please wait ${retryAfter} seconds and try again.`;
+            toast.error(retryMessage, { duration: 6000 });
+          } else {
+            toast.error("Rate limit exceeded. Your Gemini API free tier is exhausted. Please wait a few minutes and try again.");
+          }
+        } else if (errorCode === 'QUOTA_EXCEEDED') {
+          toast.error("Your Gemini API quota is exhausted. Please upgrade your plan at https://ai.google.dev/pricing", { duration: 8000 });
+        } else {
+          toast.error(errorMessage);
+        }
+        setLoading(false);
+        return;
+      }
+
+      // Validate the response has the expected structure
+      if (!data || typeof data !== 'object') {
+        console.error('Invalid optimization response - not an object:', data);
+        toast.error("Received invalid response from AI. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      if (!data.optimized_description || !data.optimized_personality_prompt) {
+        console.error('Invalid optimization response - missing required fields:', data);
+        toast.error("Received incomplete response from AI. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      console.log('Setting optimized data and opening modal');
+      setOptimizedData(data);
+      setShowOptimizeModal(true);
+      setLoading(false);
+    } catch (error: any) {
+      console.error('Caught exception in optimizeWithAI:', error);
+      if (!isMounted) {
+        console.log('Component unmounted during error handling');
+        return;
+      }
+      
+      const errorMessage = error?.message || "An unexpected error occurred. Please try again.";
+      toast.error(errorMessage);
+      setLoading(false);
+    }
+  };
+
+  const applyOptimizations = (selected: any) => {
+    setEditedAvatar({
+      ...editedAvatar,
+      ...selected,
+      is_optimized: true
+    });
+    toast.success("Optimizations applied!");
+  };
+
+  const saveChanges = async () => {
+    // Validate all fields
+    const validated = avatarSchema.safeParse({
+      name: editedAvatar.name,
+      title: editedAvatar.title || "",
+      description: editedAvatar.description || "",
+      personality_prompt: editedAvatar.personality_prompt,
+      knowledge_base: editedAvatar.knowledge_base || ""
+    });
+
+    if (!validated.success) {
+      toast.error(validated.error.errors[0].message);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Check if this is a default avatar or user avatar
+      const isUserAvatar = 'user_id' in avatar;
+      const table = isUserAvatar ? 'user_avatars' : 'avatars';
+
+      const updates: any = {
+        name: validated.data.name,
+        title: validated.data.title || '',
+        description: validated.data.description || '',
+        personality_prompt: validated.data.personality_prompt,
+        image_url: editedAvatar.image_url || null,
+        image_source: editedAvatar.image_source || 'default',
+        is_optimized: editedAvatar.is_optimized || false,
+        updated_at: new Date().toISOString()
+      };
+
+      // Only include user avatar specific fields
+      if (isUserAvatar) {
+        updates.persona_profile = editedAvatar.persona_profile || {};
+        updates.knowledge_base = validated.data.knowledge_base || '';
+        updates.category = editedAvatar.category || 'custom';
+        updates.custom_category = editedAvatar.custom_category || null;
+      } else {
+        // For default avatars, update strength and persona_profile if they exist
+        updates.strength = editedAvatar.strength || null;
+        updates.category = editedAvatar.category || 'sage';
+        if (editedAvatar.persona_profile) {
+          updates.persona_profile = editedAvatar.persona_profile;
+        }
+      }
+
+      console.log('Saving avatar updates:', { table, avatarId: avatar.id, updates });
+
+      const { data: updatedAvatar, error } = await supabase
+        .from(table)
+        .update(updates)
+        .eq('id', avatar.id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error saving avatar:', error);
+        throw error;
+      }
+
+      console.log('Avatar updated successfully:', updatedAvatar);
+      
+      // Update local state with fresh data from DB
+      if (updatedAvatar) {
+        setEditedAvatar(updatedAvatar);
+        if (updatedAvatar.image_url) {
+          setPreviewUrl(`${updatedAvatar.image_url}?t=${Date.now()}`);
+        }
+      }
+
+      toast.success("Avatar updated successfully!");
+      
+      // Call onSaved first to refresh parent data
+      onSaved?.();
+      
+      // Small delay to ensure data is refreshed before closing
+      setTimeout(() => {
+        onOpenChange(false);
+      }, 300);
+    } catch (error: any) {
+      console.error('Error in saveChanges:', error);
+      toast.error(error.message || "Failed to save changes. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteAvatar = async () => {
+    if (!('user_id' in avatar)) {
+      toast.error("Cannot delete default avatars");
+      return;
+    }
+    
+    if (!confirm("Delete this avatar permanently?")) return;
+
+    setLoading(true);
+    try {
+      await supabase.from('user_avatars').update({ deleted_at: new Date().toISOString() }).eq('id', avatar.id);
+      toast.success("Avatar deleted");
+      onOpenChange(false);
+      onSaved?.();
+    } catch (error: any) {
+      toast.error("Failed to delete");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <SafeComponent>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="h-[95vh] flex flex-col p-0 gap-0 max-w-2xl">
+        <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6 pb-3 border-b flex-shrink-0">
+          <DialogTitle className="text-xl font-semibold">Edit Avatar</DialogTitle>
+        </DialogHeader>
+
+        <ScrollArea className="flex-1 px-4 sm:px-6 py-4">
+          <div className="space-y-6 pb-4">
+            {/* Avatar Image Section */}
+            <div className="flex flex-col items-center gap-4">
+              {previewUrl && (
+                <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden ring-2 ring-border shadow-lg">
+                  <img
+                    src={previewUrl}
+                    alt={editedAvatar.name}
+                    className="w-full h-full object-cover"
+                    style={{ aspectRatio: '1/1' }}
+                    key={previewUrl}
+                  />
+                </div>
+              )}
+              
+              <Collapsible open={imageOpen} onOpenChange={setImageOpen} className="w-full">
+                <CollapsibleTrigger asChild>
+                  <Button variant="outline" size="sm" className="w-full">
+                    {imageOpen ? <ChevronUp className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
+                    Change Avatar Image
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-3 mt-3">
+                  {/* AI Generation */}
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Describe the image..."
+                      value={imagePrompt}
+                      onChange={(e) => setImagePrompt(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && regenerateImage()}
+                      className="flex-1 text-sm"
+                    />
+                    <Button onClick={regenerateImage} disabled={loading || !imagePrompt.trim()} size="sm">
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    </Button>
+                  </div>
+
+                  {/* URL Import */}
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Or paste an image URL..."
+                      value={imageUrl}
+                      onChange={(e) => setImageUrl(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && fetchImageFromUrl()}
+                      className="flex-1 text-sm"
+                    />
+                    <Button onClick={fetchImageFromUrl} disabled={loading || !imageUrl.trim()} size="sm">
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LinkIcon className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                  
+                  {/* File Upload */}
+                  <label className="block">
+                    <Button variant="outline" className="w-full" disabled={loading} size="sm" asChild>
+                      <span>
+                        <Upload className="w-4 h-4 mr-2" />
+                        Upload Custom Image
+                      </span>
+                    </Button>
+                    <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
+                  </label>
+                </CollapsibleContent>
+              </Collapsible>
+            </div>
+
+            <Separator />
+
+            {/* Basic Information */}
+            <div className="space-y-4">
+              <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Basic Information</h3>
+              
+              <div className="space-y-2">
+                <Label htmlFor="name" className="text-sm font-medium">Name *</Label>
+                <Input
+                  id="name"
+                  value={editedAvatar.name}
+                  onChange={(e) => setEditedAvatar({ ...editedAvatar, name: e.target.value })}
+                  placeholder="Avatar name"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="title" className="text-sm font-medium">Title</Label>
+                <Input
+                  id="title"
+                  value={editedAvatar.title}
+                  onChange={(e) => setEditedAvatar({ ...editedAvatar, title: e.target.value })}
+                  placeholder="e.g., Philosopher Saint, Innovator..."
+                />
+              </div>
+
+              {'user_id' in avatar && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="category" className="text-sm font-medium">Category</Label>
+                    <Select value={editedAvatar.category || 'custom'} onValueChange={(v) => setEditedAvatar({...editedAvatar, category: v})}>
+                      <SelectTrigger id="category">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="sage">Sage</SelectItem>
+                        <SelectItem value="innovator">Innovator</SelectItem>
+                        <SelectItem value="custom">Custom</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="description" className="text-sm font-medium">Description</Label>
+                <Textarea
+                  id="description"
+                  value={editedAvatar.description || ""}
+                  onChange={(e) => setEditedAvatar({ ...editedAvatar, description: e.target.value })}
+                  rows={3}
+                  placeholder="A compelling 2-3 sentence description..."
+                  className="resize-none text-sm"
+                />
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Personality Configuration */}
+            <div className="space-y-4">
+              <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Personality Configuration</h3>
+              
+              <div className="space-y-2">
+                <Label htmlFor="personality" className="text-sm font-medium">Personality Prompt (System Prompt) *</Label>
+                <Textarea
+                  id="personality"
+                  value={editedAvatar.personality_prompt}
+                  onChange={(e) => setEditedAvatar({ ...editedAvatar, personality_prompt: e.target.value })}
+                  rows={6}
+                  className="font-mono text-xs resize-none"
+                  placeholder="Define how this avatar speaks, core philosophy, response guidelines..."
+                />
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Knowledge Base */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Knowledge Base</h3>
+                <Button variant="ghost" size="sm" onClick={() => setKnowledgeOpen(!knowledgeOpen)}>
+                  {knowledgeOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </Button>
+              </div>
+              
+              <Collapsible open={knowledgeOpen} onOpenChange={setKnowledgeOpen}>
+                <CollapsibleContent className="space-y-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="knowledge" className="text-sm font-medium">Knowledge Base Content</Label>
+                    <Textarea
+                      id="knowledge"
+                      value={editedAvatar.knowledge_base || ""}
+                      onChange={(e) => setEditedAvatar({ ...editedAvatar, knowledge_base: e.target.value })}
+                      placeholder="Additional context, facts, teachings, stories..."
+                      rows={5}
+                      className="font-mono text-xs resize-none"
+                    />
+                  </div>
+
+                  {/* Website Import */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Import from Website</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Paste website URL..."
+                        value={editedAvatar.knowledge_url || ""}
+                        onChange={(e) => setEditedAvatar({ ...editedAvatar, knowledge_url: e.target.value })}
+                        className="flex-1 text-sm"
+                      />
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={async () => {
+                          const validated = urlSchema.safeParse(editedAvatar.knowledge_url);
+                          
+                          if (!validated.success) {
+                            toast.error(validated.error.errors[0].message);
+                            return;
+                          }
+                          
+                          setLoading(true);
+                          try {
+                            const { data, error } = await supabase.functions.invoke('fetch-knowledge-from-url', {
+                              body: { url: validated.data }
+                            });
+                            if (error) throw error;
+                            if (data?.content) {
+                              const currentKnowledge = editedAvatar.knowledge_base || "";
+                              const newKnowledge = currentKnowledge 
+                                ? `${currentKnowledge}\n\n--- Content from ${validated.data} ---\n${data.content}`
+                                : data.content;
+                              setEditedAvatar({ ...editedAvatar, knowledge_base: newKnowledge, knowledge_url: "" });
+                              toast.success("Website content extracted!");
+                            }
+                          } catch (error: any) {
+                            toast.error("Failed to fetch website content");
+                          } finally {
+                            setLoading(false);
+                          }
+                        }}
+                        disabled={loading || !editedAvatar.knowledge_url?.trim()}
+                      >
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Extract"}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Document Upload */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Upload Documents</Label>
+                    <label className="block">
+                      <Button variant="outline" className="w-full" disabled={loading} size="sm" asChild>
+                        <span>
+                          <Upload className="w-4 h-4 mr-2" />
+                          Upload PDF, TXT, MD, DOCX
+                        </span>
+                      </Button>
+                      <input 
+                        type="file" 
+                        accept=".pdf,.txt,.md,.doc,.docx" 
+                        multiple
+                        onChange={async (e) => {
+                          const files = Array.from(e.target.files || []);
+                          if (files.length === 0) return;
+                          
+                          setLoading(true);
+                          try {
+                            let allContent = "";
+                            
+                            for (const file of files) {
+                              const fileExt = file.name.split('.').pop()?.toLowerCase();
+                              
+                              if (fileExt === 'pdf' || fileExt === 'docx' || fileExt === 'doc') {
+                                const formData = new FormData();
+                                formData.append('file', file);
+                                
+                                const { data, error } = await supabase.functions.invoke('parse-document', {
+                                  body: formData
+                                });
+                                
+                                if (error) {
+                                  console.error(`Error parsing ${file.name}:`, error);
+                                  toast.error(`Failed to parse ${file.name}`);
+                                  continue;
+                                }
+                                
+                                if (data?.content) {
+                                  allContent += `\n\n--- Content from ${file.name} ---\n${data.content}`;
+                                }
+                              } else {
+                                const text = await file.text();
+                                allContent += `\n\n--- Content from ${file.name} ---\n${text}`;
+                              }
+                            }
+                            
+                            const currentKnowledge = editedAvatar.knowledge_base || "";
+                            const newKnowledge = currentKnowledge 
+                              ? `${currentKnowledge}${allContent}`
+                              : allContent.trim();
+                            
+                            setEditedAvatar({ ...editedAvatar, knowledge_base: newKnowledge });
+                            toast.success(`${files.length} document(s) processed successfully!`);
+                            
+                            e.target.value = '';
+                          } catch (error: any) {
+                            console.error('Error processing files:', error);
+                            toast.error("Failed to process files");
+                          } finally {
+                            setLoading(false);
+                          }
+                        }}
+                        className="hidden" 
+                      />
+                    </label>
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            </div>
+
+            <Separator />
+
+            {/* AI Optimization */}
+            <Button 
+              onClick={optimizeWithAI} 
+              disabled={loading} 
+              variant="secondary" 
+              className="w-full"
+              size="lg"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Sparkles className="w-4 h-4 mr-2" />}
+              Optimize with AI
+            </Button>
+
+            {/* Voice Upload Section */}
+            {editedAvatar && (
+              <VoiceUploader
+                avatarId={editedAvatar.id}
+                isCustom={!('persona_profile' in editedAvatar)}
+                onVoiceUploaded={(voiceUrl, voiceId) => {
+                  toast.success("Custom voice applied successfully");
+                  console.log("Voice uploaded:", voiceUrl, voiceId);
+                }}
+              />
+            )}
+          </div>
+        </ScrollArea>
+
+        {/* Footer Actions - Sticky on mobile */}
+        <div className="sticky bottom-0 px-4 sm:px-6 py-3 sm:py-4 border-t flex-shrink-0 bg-background z-10 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+          <div className="flex gap-2">
+            <Button onClick={saveChanges} disabled={loading} className="flex-1" size="lg">
+              {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+              Save
+            </Button>
+            <Button onClick={() => onOpenChange(false)} variant="outline" size="lg">
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+
+      {/* Optimize Preview Modal */}
+      {optimizedData && (
+        <OptimizePreviewModal
+          open={showOptimizeModal}
+          onOpenChange={setShowOptimizeModal}
+          original={{
+            description: editedAvatar.description || "",
+            personality_prompt: editedAvatar.personality_prompt,
+            knowledge_base: editedAvatar.knowledge_base || ""
+          }}
+          optimized={optimizedData}
+          onApply={applyOptimizations}
+        />
+      )}
+    </Dialog>
+    </SafeComponent>
+  );
+}
