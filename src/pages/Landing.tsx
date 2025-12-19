@@ -99,7 +99,15 @@ export default function Landing() {
       <section className="container mx-auto px-4 py-16 sm:py-24 animate-fade-in">
         <div className="text-center space-y-8 max-w-4xl mx-auto">
           <div className="flex justify-center mb-4">
-            <Flower2 className="h-16 w-16 sm:h-20 sm:w-20 text-primary" />
+            <svg width="0" height="0" className="absolute">
+              <defs>
+                <linearGradient id="logo-gradient-landing" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="hsl(var(--primary))" />
+                  <stop offset="100%" stopColor="hsl(var(--accent))" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <Flower2 className="h-16 w-16 sm:h-20 sm:w-20" style={{ stroke: 'url(#logo-gradient-landing)' }} />
           </div>
           
           <Badge className="mx-auto" variant="secondary">
