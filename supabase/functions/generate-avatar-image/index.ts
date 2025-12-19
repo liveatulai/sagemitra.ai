@@ -57,25 +57,34 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    // Prompt for close-up photo-realistic portraits like existing avatars (Einstein, Musk, Aphrodite style)
-    const enhancedPrompt = `Extreme close-up portrait photograph of ${prompt}, head and shoulders only.
+    // Prompt matching existing avatar style (Einstein, Musk, Aphrodite) - head/shoulders that fit in circle
+    const enhancedPrompt = `Professional portrait photograph of ${prompt}.
 
-CRITICAL - This must be a REAL PHOTOGRAPH of ${prompt}, showing their ACTUAL FACE with accurate recognizable features.
+COMPOSITION (CRITICAL):
+- Head, neck, and upper shoulders visible - NOT extreme close-up
+- Subject centered, with space around the head for circular cropping
+- Face takes up about 60% of frame height, leaving room for hair and shoulders
+- Perfectly suited for a circular avatar crop
 
-STYLE REFERENCE (match exactly):
-- Tight close-up framing: face fills 80% of the frame
-- Professional studio lighting: soft diffused key light from front-left
-- Pure black background, no gradients
-- Ultra sharp focus on eyes
-- Natural skin texture visible
-- Serious, contemplative expression looking slightly off-camera
-- Color grading: slightly desaturated, muted warm tones
-- Shot on medium format camera, shallow depth of field
-- Magazine editorial portrait quality (like TIME magazine covers)
+SUBJECT ACCURACY:
+- Must be an accurate, recognizable depiction of ${prompt}
+- Show their distinctive features, hairstyle, and appearance
+- Historically/culturally accurate clothing and styling if applicable
 
-OUTPUT: Photorealistic image only. No text, no borders, no watermarks.`;
+VISUAL STYLE (match existing avatars):
+- Cinematic color grading with warm, slightly golden undertones
+- Soft vignette effect around edges
+- Professional studio lighting: soft key light, subtle fill
+- Rich, deep shadows with smooth gradients
+- Slightly desaturated, timeless look
+- Dark moody background (deep charcoal/black gradient)
+- Sharp focus on face, gentle blur on shoulders
+- High-end editorial magazine quality
+- Thoughtful, dignified expression
 
-    console.log('Generating close-up portrait with Nano Banana Pro:', prompt);
+OUTPUT: Photorealistic portrait only. No text, borders, or watermarks. Square format.`;
+
+    console.log('Generating avatar portrait with Nano Banana Pro:', prompt);
 
     // Generate image using Lovable AI with Nano Banana Pro model
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
