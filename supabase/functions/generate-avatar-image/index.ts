@@ -8,10 +8,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// SECURITY: Removed userId from schema - use authenticated user instead
+// Schema now includes optional referenceImageUrl
 const imageGenSchema = z.object({
   prompt: z.string().min(1).max(5000),
   avatarId: z.string().uuid(),
+  referenceImageUrl: z.string().url().optional(),
 });
 
 serve(async (req) => {
@@ -45,20 +46,50 @@ serve(async (req) => {
       );
     }
 
-    // Use authenticated user's ID instead of client-supplied userId
     const userId = user.id;
 
     const body = await req.json();
     const validatedData = imageGenSchema.parse(body);
-    const { prompt, avatarId } = validatedData;
+    const { prompt, avatarId, referenceImageUrl } = validatedData;
     
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    // Prompt matching existing avatar style - emphasize real person accuracy
-    const enhancedPrompt = `Generate a photorealistic portrait of the REAL historical figure "${prompt}".
+    let messageContent: any;
+
+    if (referenceImageUrl) {
+      // With reference image - use image editing/transformation
+      console.log('Generating avatar from reference image:', referenceImageUrl);
+      
+      const enhancedPrompt = `Transform this reference image into a professional avatar portrait for "${prompt}".
+
+IMPORTANT: Use the person's face from the reference image as the basis.
+
+APPLY THIS STYLE:
+- Professional studio portrait with warm cinematic color grading
+- Golden undertones, slightly desaturated timeless look
+- Soft vignette effect around edges
+- Dark gradient background (charcoal to black)
+- Professional studio lighting: soft key light, subtle fill
+- Sharp focus on face, gentle blur on background
+- Dignified, contemplative expression
+- Head, neck, and upper shoulders framing
+- Square format suitable for circular avatar crop
+- Editorial magazine portrait quality
+
+OUTPUT: Single styled portrait matching the avatar aesthetic. No text or borders.`;
+
+      messageContent = [
+        { type: "text", text: enhancedPrompt },
+        { type: "image_url", image_url: { url: referenceImageUrl } }
+      ];
+    } else {
+      // Without reference - generate from scratch
+      console.log('Generating avatar from text prompt:', prompt);
+      
+      const enhancedPrompt = `Generate a photorealistic portrait of the REAL historical figure "${prompt}".
 
 CRITICAL - ACCURACY REQUIREMENTS:
 - This MUST be ${prompt} - the actual real person, not a generic representation
@@ -85,9 +116,10 @@ VISUAL STYLE (consistent with existing avatars):
 
 OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
 
-    console.log('Generating accurate portrait of:', prompt);
+      messageContent = enhancedPrompt;
+    }
 
-    // Generate image using Lovable AI with Nano Banana Pro model
+    // Generate image using Lovable AI
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -98,7 +130,7 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
         model: 'google/gemini-3-pro-image-preview',
         messages: [{
           role: 'user',
-          content: enhancedPrompt
+          content: messageContent
         }],
         modalities: ['image', 'text']
       }),
@@ -130,7 +162,7 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
     const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
     const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
 
-    // Use authenticated userId for storage path
+    // Upload to storage
     const fileName = `${avatarId || Date.now()}.png`;
     const filePath = `${userId}/${fileName}`;
 

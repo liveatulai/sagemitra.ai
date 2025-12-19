@@ -77,6 +77,8 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
   const [searchingImages, setSearchingImages] = useState(false);
   const [referenceImages, setReferenceImages] = useState<string[]>([]);
   const [showImageSearch, setShowImageSearch] = useState(false);
+  const [selectedReferenceUrl, setSelectedReferenceUrl] = useState<string | null>(null);
+  const [generatingFromReference, setGeneratingFromReference] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -242,13 +244,19 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     }
   };
 
-  const selectReferenceImage = async (url: string) => {
-    // Use the fetch-image-from-url function to import the selected image
+  const selectReferenceImage = (url: string) => {
+    // Show options for what to do with the selected image
+    setSelectedReferenceUrl(url);
+  };
+
+  const useReferenceDirectly = async () => {
+    if (!selectedReferenceUrl) return;
+    
     setFetchingUrl(true);
     try {
       const { data, error } = await supabase.functions.invoke('fetch-image-from-url', {
         body: { 
-          imageUrl: url,
+          imageUrl: selectedReferenceUrl,
           avatarId: avatar.id
         }
       });
@@ -259,15 +267,50 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
         const newUrl = `${data.imageUrl}?t=${Date.now()}`;
         setEditedAvatar({ ...editedAvatar, image_url: newUrl, image_source: 'url-import' });
         setPreviewUrl(newUrl);
-        toast.success("Reference image selected!");
-        setShowImageSearch(false);
-        setReferenceImages([]);
+        toast.success("Reference image applied!");
+        closeImageSearch();
       }
     } catch (error: any) {
       toast.error("Failed to use this image. Try another one.");
     } finally {
       setFetchingUrl(false);
     }
+  };
+
+  const generateFromReference = async () => {
+    if (!selectedReferenceUrl) return;
+    
+    setGeneratingFromReference(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-avatar-image', {
+        body: { 
+          prompt: editedAvatar.name || 'portrait',
+          avatarId: avatar.id,
+          referenceImageUrl: selectedReferenceUrl
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.imageUrl) {
+        const newUrl = `${data.imageUrl}?t=${Date.now()}`;
+        setEditedAvatar({ ...editedAvatar, image_url: newUrl, image_source: 'ai-generated' });
+        setPreviewUrl(newUrl);
+        toast.success("AI avatar generated from reference!");
+        closeImageSearch();
+      }
+    } catch (error: any) {
+      console.error('Error generating from reference:', error);
+      toast.error(error.message || "Failed to generate image. Try again.");
+    } finally {
+      setGeneratingFromReference(false);
+    }
+  };
+
+  const closeImageSearch = () => {
+    setShowImageSearch(false);
+    setReferenceImages([]);
+    setSelectedReferenceUrl(null);
   };
 
   const optimizeField = async (field: 'description' | 'personality_prompt') => {
@@ -567,22 +610,60 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                     <div className="mt-3 p-3 border rounded-lg bg-muted/30">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-medium text-muted-foreground">
-                          {searchingImages ? 'Searching...' : `Found ${referenceImages.length} images`}
+                          {searchingImages ? 'Searching...' : selectedReferenceUrl ? 'Selected image' : `Found ${referenceImages.length} images`}
                         </span>
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-6 w-6 p-0"
-                          onClick={() => {
-                            setShowImageSearch(false);
-                            setReferenceImages([]);
-                          }}
+                          onClick={closeImageSearch}
                         >
                           <X className="w-3 h-3" />
                         </Button>
                       </div>
                       
-                      {searchingImages ? (
+                      {/* Selected image - show options */}
+                      {selectedReferenceUrl ? (
+                        <div className="space-y-3">
+                          <div className="flex justify-center">
+                            <img
+                              src={selectedReferenceUrl}
+                              alt="Selected reference"
+                              className="w-24 h-24 object-cover rounded-lg border-2 border-primary"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            <Button
+                              size="sm"
+                              onClick={useReferenceDirectly}
+                              disabled={fetchingUrl || generatingFromReference}
+                              className="w-full"
+                            >
+                              {fetchingUrl ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                              Use This Image Directly
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={generateFromReference}
+                              disabled={fetchingUrl || generatingFromReference}
+                              className="w-full"
+                            >
+                              {generatingFromReference ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                              Generate AI Styled Version
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setSelectedReferenceUrl(null)}
+                              disabled={fetchingUrl || generatingFromReference}
+                              className="w-full"
+                            >
+                              Choose Different Image
+                            </Button>
+                          </div>
+                        </div>
+                      ) : searchingImages ? (
                         <div className="grid grid-cols-3 gap-2">
                           {[1, 2, 3, 4, 5, 6].map((i) => (
                             <Skeleton key={i} className="aspect-square rounded-md" />
@@ -602,7 +683,6 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                                 alt={`Reference ${index + 1}`}
                                 className="w-full h-full object-cover"
                                 onError={(e) => {
-                                  // Hide broken images
                                   (e.target as HTMLImageElement).style.display = 'none';
                                 }}
                               />
