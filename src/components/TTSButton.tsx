@@ -83,12 +83,14 @@ export default function TTSButton({ text, emotion = "calm", avatarType }: TTSBut
 
   const handleTTS = () => {
     if (!window.speechSynthesis) {
-      toast("Audio not available", { description: "Text-to-speech is not supported in this browser" });
+      toast.error("Text-to-speech not supported", { 
+        description: "Please use a modern browser like Chrome or Safari" 
+      });
       return;
     }
 
     // Stop current playback
-    if (isPlaying && utterance) {
+    if (isPlaying) {
       window.speechSynthesis.cancel();
       stopAmbientSound();
       setIsPlaying(false);
@@ -96,15 +98,38 @@ export default function TTSButton({ text, emotion = "calm", avatarType }: TTSBut
       return;
     }
 
+    // Cancel any previous speech first
+    window.speechSynthesis.cancel();
+
     // Create new utterance with sanitized text and natural pauses
     const sanitizedText = sanitizeTextForTTS(text);
     const textWithPauses = addNaturalPauses(sanitizedText);
+    
+    if (!textWithPauses.trim()) {
+      toast.info("Nothing to read");
+      return;
+    }
+
     const newUtterance = new SpeechSynthesisUtterance(textWithPauses);
+    
+    // Get available voices and select a good one
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(v => 
+      v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Alex'))
+    ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+    
+    if (preferredVoice) {
+      newUtterance.voice = preferredVoice;
+    }
     
     const tone = getEmotionTone(emotion);
     newUtterance.rate = tone.rate;
     newUtterance.pitch = tone.pitch;
     newUtterance.volume = 1;
+    
+    newUtterance.onstart = () => {
+      setIsPlaying(true);
+    };
     
     newUtterance.onend = () => {
       setIsPlaying(false);
@@ -117,19 +142,22 @@ export default function TTSButton({ text, emotion = "calm", avatarType }: TTSBut
       setIsPlaying(false);
       setUtterance(null);
       stopAmbientSound();
-      toast("Audio playback failed", { description: "Please try again" });
+      if (event.error !== 'interrupted' && event.error !== 'canceled') {
+        toast.error("Audio playback failed", { description: "Please try again" });
+      }
     };
 
     // Start playback with ambient sound
     try {
-      playAmbientSound();
-      window.speechSynthesis.speak(newUtterance);
       setUtterance(newUtterance);
       setIsPlaying(true);
+      playAmbientSound();
+      window.speechSynthesis.speak(newUtterance);
     } catch (error) {
       console.error("Failed to start speech:", error);
+      setIsPlaying(false);
       stopAmbientSound();
-      toast("Audio not available", { description: "Please try again" });
+      toast.error("Audio not available", { description: "Please try again" });
     }
   };
 
