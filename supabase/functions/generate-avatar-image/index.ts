@@ -49,42 +49,15 @@ serve(async (req) => {
 
     const body = await req.json();
     const validatedData = imageGenSchema.parse(body);
-    const { prompt, avatarId, referenceImageUrl } = validatedData;
+    const { prompt, avatarId } = validatedData;
     
-    const XAI_API_KEY = Deno.env.get('XAI_API_KEY');
-    if (!XAI_API_KEY) {
-      throw new Error('XAI_API_KEY not configured');
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    if (!LOVABLE_API_KEY) {
+      throw new Error('LOVABLE_API_KEY not configured');
     }
 
     // Build the image prompt
-    let imagePrompt: string;
-    
-    if (referenceImageUrl) {
-      console.log('Generating avatar with reference to:', prompt);
-      imagePrompt = `Create a professional avatar portrait for "${prompt}".
-
-APPLY THIS STYLE:
-- Professional studio portrait with warm cinematic color grading
-- Golden undertones, slightly desaturated timeless look
-- Soft vignette effect around edges
-- Dark gradient background (charcoal to black)
-- Professional studio lighting: soft key light, subtle fill
-- Sharp focus on face, gentle blur on background
-- Dignified, contemplative expression
-- Head, neck, and upper shoulders framing
-- Square format suitable for circular avatar crop
-- Editorial magazine portrait quality
-
-OUTPUT: Single styled portrait. No text or borders.`;
-    } else {
-      console.log('Generating avatar from text prompt:', prompt);
-      imagePrompt = `Generate a photorealistic portrait of the REAL historical figure "${prompt}".
-
-CRITICAL - ACCURACY REQUIREMENTS:
-- This MUST be ${prompt} - the actual real person, not a generic representation
-- Study and replicate their EXACT facial features, bone structure, and distinctive characteristics
-- If ${prompt} is a known historical/public figure, match their documented appearance precisely
-- Include their characteristic attire, accessories, or styling they are known for
+    const imagePrompt = `Generate a photorealistic portrait of "${prompt}".
 
 COMPOSITION:
 - Head, neck, and upper shoulders visible
@@ -104,77 +77,71 @@ VISUAL STYLE:
 - Editorial magazine portrait quality
 
 OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
-    }
 
-    console.log('Calling xAI Grok API for image generation');
+    console.log('Calling Lovable AI Gateway for image generation:', prompt);
 
-    // Call xAI/Grok image generation API
-    // NOTE: xAI's images API is OpenAI-like but may reject some optional params (e.g. size) depending on model/account.
-    const response = await fetch('https://api.x.ai/v1/images/generations', {
+    // Call Lovable AI Gateway with Gemini image model
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${XAI_API_KEY}`,
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'grok-2-image',
-        prompt: imagePrompt,
-        n: 1,
-        // Intentionally omit `size` and `response_format` to avoid 400 "Argument not supported" errors.
+        model: 'google/gemini-2.5-flash-image-preview',
+        messages: [
+          {
+            role: 'user',
+            content: imagePrompt
+          }
+        ],
+        modalities: ['image', 'text']
       }),
     });
 
     if (!response.ok) {
       const raw = await response.text();
-      console.error("xAI API error:", response.status, raw);
+      console.error("Lovable AI Gateway error:", response.status, raw);
 
-      let friendly = `Image generation failed (${response.status}).`;
-      
       if (response.status === 429) {
-        friendly = "xAI rate limit reached. Please try again in a moment.";
-      } else if (response.status === 403) {
-        friendly = "xAI API access denied. Check your API key permissions.";
-      } else if (response.status === 401) {
-        friendly = "xAI API key is invalid or unauthorized.";
-      } else if (response.status === 400) {
-        try {
-          const parsed = JSON.parse(raw);
-          const msg = parsed?.error?.message || parsed?.error;
-          if (msg) {
-            friendly = `xAI error: ${msg}`;
-          }
-        } catch {}
+        return new Response(
+          JSON.stringify({ error: "Rate limit reached. Please try again in a moment." }),
+          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      if (response.status === 402) {
+        return new Response(
+          JSON.stringify({ error: "AI credits exhausted. Please add credits to continue." }),
+          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
       return new Response(
-        JSON.stringify({ error: friendly, status: response.status }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: response.status }
+        JSON.stringify({ error: `Image generation failed (${response.status}).` }),
+        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const data = await response.json();
-    console.log('xAI response received');
+    console.log('Lovable AI response received');
 
-    // Extract image from response (OpenAI-compatible format)
-    const url: string | undefined = data.data?.[0]?.url;
-    const b64: string | undefined = data.data?.[0]?.b64_json;
+    // Extract image from Gemini response format
+    const imageDataUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
 
-    let imageBuffer: Uint8Array | undefined;
-
-    if (b64) {
-      imageBuffer = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-    } else if (url) {
-      const imgResp = await fetch(url);
-      if (!imgResp.ok) {
-        throw new Error(`Failed to download generated image (${imgResp.status})`);
-      }
-      imageBuffer = new Uint8Array(await imgResp.arrayBuffer());
-    }
-
-    if (!imageBuffer) {
-      console.error('No image in xAI response:', JSON.stringify(data).substring(0, 500));
+    if (!imageDataUrl) {
+      console.error('No image in response:', JSON.stringify(data).substring(0, 500));
       throw new Error('No image generated. Please try again.');
     }
+
+    // Parse base64 data URL (format: data:image/png;base64,...)
+    const base64Match = imageDataUrl.match(/^data:image\/\w+;base64,(.+)$/);
+    if (!base64Match) {
+      console.error('Invalid image data URL format');
+      throw new Error('Invalid image format received.');
+    }
+
+    const imageBuffer = Uint8Array.from(atob(base64Match[1]), c => c.charCodeAt(0));
 
     // Upload to storage
     const fileName = `${avatarId || Date.now()}.png`;
