@@ -330,7 +330,7 @@ export default function AvatarGrid() {
           <div className="flex items-center justify-between h-14 sm:h-16">
             {/* Logo */}
             <div className="flex items-center gap-2 flex-1 min-w-0">
-              <img src={logo} alt="SageMitra" className="h-8 w-8 sm:h-9 sm:w-9" />
+              <img src={logo} alt="SageMitra" className="h-10 w-10 sm:h-12 sm:w-12" />
               <div>
                 <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
                   SageMitra
