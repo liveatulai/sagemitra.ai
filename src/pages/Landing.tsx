@@ -12,7 +12,7 @@ import einsteinImg from "@/assets/avatars/einstein.jpg";
 import jobsImg from "@/assets/avatars/jobs.jpg";
 import muskImg from "@/assets/avatars/musk.jpg";
 import krishnamurtiImg from "@/assets/avatars/krishnamurti.jpg";
-import { LogoMark } from "@/components/LogoMark";
+
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -98,9 +98,6 @@ export default function Landing() {
       {/* Hero Section */}
       <section className="container mx-auto px-4 py-16 sm:py-24 animate-fade-in">
         <div className="text-center space-y-8 max-w-4xl mx-auto">
-          <div className="flex justify-center mb-4">
-            <LogoMark className="h-20 w-20 sm:h-24 sm:w-24" />
-          </div>
           
           <Badge className="mx-auto" variant="secondary">
             <Sparkles className="w-3 h-3 mr-1" />
