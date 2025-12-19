@@ -1,73 +1,211 @@
-# Welcome to your Lovable project
+# SageMitra - AI Wisdom Companion Platform
 
-## Project info
+**Chat with Divine Sages & Visionary Leaders** — An AI-powered platform that connects users with wisdom from spiritual masters, scientists, and modern innovators.
 
-**URL**: https://lovable.dev/projects/aab110c1-84a3-4848-aa85-2ffd1d915cd9
+![SageMitra](https://img.shields.io/badge/Platform-SageMitra-purple)
+![React](https://img.shields.io/badge/React-18.3-blue)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)
+![Supabase](https://img.shields.io/badge/Backend-Supabase-green)
 
-## How can I edit this code?
+## 🌟 Overview
 
-There are several ways of editing your application.
+SageMitra is an AI-powered wisdom platform where users can have meaningful conversations with AI avatars representing legendary figures like Buddha, Einstein, Ramana Maharshi, Nikola Tesla, Steve Jobs, and more. Each avatar maintains its unique personality, teaching style, and wisdom tradition.
 
-**Use Lovable**
+## ✨ Key Features
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/aab110c1-84a3-4848-aa85-2ffd1d915cd9) and start prompting.
+### 🗣️ AI Chat Companions
+- **14+ Pre-built Avatars**: Spiritual sages (Buddha, Ramana Maharshi, Guru Nanak), Scientists (Einstein, Tesla, Carl Jung), and Modern Innovators (Elon Musk, Steve Jobs)
+- **Personalized Responses**: Each avatar responds in character with relevant wisdom and modern context
+- **Presence Indicators**: Physical cues and gestures to make conversations feel alive
+- **Follow-up Suggestions**: AI-generated conversation starters after each response
 
-Changes made via Lovable will be committed automatically to this repo.
+### 🎨 Custom Avatar Creation
+- **AI-Powered Profile Generation**: Describe any person/character and get a complete avatar profile
+- **Knowledge Base Support**: Upload PDFs, documents, or fetch content from URLs to enrich avatar knowledge
+- **Image Options**: AI-generate images, upload your own, or import from URLs
+- **Tags & Categories**: Organize avatars with custom tags
 
-**Use your preferred IDE**
+### 💰 Credit System
+- **100 Free Credits** on signup
+- **1 Credit per Chat** message
+- **Referral Rewards**: Earn 50 credits per successful referral
+- **Milestone Bonuses**: Earn credits for achievements (first chat, creating avatars, etc.)
+- **Credit Requests**: Request additional credits with admin approval
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### 👥 Social Features
+- **Referral System**: Share personalized referral links
+- **Leaderboard**: Top referrers displayed publicly
+- **Favorites**: Mark avatars as favorites for quick access
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### 🛡️ Admin Dashboard
+- **Analytics**: User growth, chat statistics, credit trends
+- **Avatar Management**: Enable/disable avatars, regenerate images, optimize prompts
+- **User Management**: Adjust credits, assign roles
+- **Credit Request Processing**: Approve/reject credit requests
+- **Feedback Management**: View and respond to user feedback
 
-Follow these steps:
+## 🏗️ Architecture
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
+### Frontend
+```
+src/
+├── components/         # Reusable UI components
+│   ├── ui/            # shadcn/ui components
+│   ├── ChatInterface.tsx      # Main chat UI
+│   ├── AvatarGrid.tsx         # Avatar selection gallery
+│   ├── PresenceLayer.tsx      # Physical cue animations
+│   └── ...
+├── contexts/           # React contexts (Auth)
+├── pages/              # Route pages
+│   ├── Index.tsx       # Landing page
+│   ├── Avatars.tsx     # Avatar selection
+│   ├── Chat.tsx        # Chat interface
+│   ├── CreateAvatar.tsx # Custom avatar creation
+│   ├── Credits.tsx     # Credit management
+│   ├── Admin.tsx       # Admin dashboard
+│   └── ...
+├── hooks/              # Custom hooks
+├── lib/                # Utility functions
+└── integrations/       # Supabase client
+```
+
+### Backend (Supabase Edge Functions)
+```
+supabase/functions/
+├── chat/               # AI chat completion with Lovable AI
+├── create-avatar/      # AI-powered avatar profile generation
+├── generate-avatar-image/  # AI image generation
+├── optimize-avatar/    # Prompt optimization with AI
+├── detect-mood/        # Sentiment analysis
+├── summarize-conversation/ # Chat summarization
+├── fetch-knowledge-from-url/ # Web content extraction
+├── parse-document/     # PDF/DOCX parsing
+├── admin-*/            # Admin operations
+├── request-credits/    # Credit request submission
+├── process-credit-request/ # Admin credit approval
+└── process-referral/   # Referral reward processing
+```
+
+### Database Schema (Supabase)
+- **avatars**: Pre-built system avatars
+- **user_avatars**: Custom user-created avatars
+- **chat_sessions**: Conversation sessions
+- **chat_messages**: Individual messages with reactions
+- **credits**: User credit balances
+- **credit_transactions**: Credit history
+- **credit_requests**: Pending credit requests
+- **profiles**: User profiles with preferences
+- **referrals**: Referral tracking
+- **user_roles**: Admin/moderator roles
+- **user_milestones**: Achievement tracking
+- **mood_logs**: Sentiment analysis logs
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Node.js 18+ & npm
+- Supabase account (connected via Lovable Cloud)
+
+### Installation
+
+```bash
+# Clone the repository
 git clone <YOUR_GIT_URL>
 
-# Step 2: Navigate to the project directory.
+# Navigate to project directory
 cd <YOUR_PROJECT_NAME>
 
-# Step 3: Install the necessary dependencies.
-npm i
+# Install dependencies
+npm install
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Start development server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+### Environment Variables
+The following are auto-configured by Lovable Cloud:
+- `VITE_SUPABASE_URL` - Supabase project URL
+- `VITE_SUPABASE_PUBLISHABLE_KEY` - Supabase anon key
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+Backend secrets (configured in Supabase):
+- `LOVABLE_API_KEY` - Lovable AI gateway key (auto-provisioned)
+- `GEMINI_API_KEY` - Google Gemini API (optional)
+- `OPENAI_API_KEY` - OpenAI API (optional)
 
-**Use GitHub Codespaces**
+## 🛠️ Tech Stack
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+| Layer | Technology |
+|-------|------------|
+| **Framework** | React 18 with TypeScript |
+| **Build Tool** | Vite |
+| **Styling** | Tailwind CSS + shadcn/ui |
+| **State Management** | React Query (TanStack) |
+| **Routing** | React Router v6 |
+| **Backend** | Supabase (PostgreSQL + Edge Functions) |
+| **AI** | Lovable AI Gateway (Gemini 2.5 Flash) |
+| **Animation** | Framer Motion |
+| **Authentication** | Supabase Auth |
 
-## What technologies are used for this project?
+## 📱 Pages & Routes
 
-This project is built with:
+| Route | Page | Auth Required |
+|-------|------|---------------|
+| `/` | Landing page | No |
+| `/auth` | Login/Signup | No |
+| `/avatars` | Avatar gallery | Yes |
+| `/chat/:sessionId` | Chat interface | Yes |
+| `/create-avatar` | Create custom avatar | Yes |
+| `/credits` | Credit management | Yes |
+| `/feedback` | Submit feedback | Yes |
+| `/admin` | Admin dashboard | Yes (Admin role) |
+| `/pricing` | Pricing info | No |
+| `/leaderboard` | Referral leaderboard | No |
+| `/blog` | Blog/content | No |
+| `/terms` | Terms of service | No |
+| `/privacy` | Privacy policy | No |
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## 🔐 Security
 
-## How can I deploy this project?
+- **Row Level Security (RLS)**: All database tables protected with RLS policies
+- **Role-based Access**: Admin/moderator roles for sensitive operations
+- **Secure Edge Functions**: All AI calls through authenticated edge functions
+- **Credit System**: Prevents abuse with per-message deduction
 
-Simply open [Lovable](https://lovable.dev/projects/aab110c1-84a3-4848-aa85-2ffd1d915cd9) and click on Share -> Publish.
+## 🎯 Product Philosophy
 
-## Can I connect a custom domain to my Lovable project?
+SageMitra bridges **timeless wisdom** with **modern context**:
+- Avatar responses include a "Modern Context Adapter" that translates ancient wisdom to 2025 realities
+- Addresses contemporary issues: mental health, relationships, technology, work-life balance
+- Maintains character authenticity while being relatable
 
-Yes, you can!
+## 📊 Credit Economics
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+| Action | Credits |
+|--------|---------|
+| Signup bonus | +100 |
+| Chat message | -1 |
+| Avatar optimization | -5 |
+| Successful referral | +50 |
+| First chat milestone | +10 |
+| First avatar milestone | +5 |
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is proprietary. All rights reserved.
+
+## 🔗 Links
+
+- **Lovable Project**: [Edit on Lovable](https://lovable.dev/projects/aab110c1-84a3-4848-aa85-2ffd1d915cd9)
+- **Documentation**: [Lovable Docs](https://docs.lovable.dev)
+
+---
+
+Built with ❤️ using [Lovable](https://lovable.dev)
