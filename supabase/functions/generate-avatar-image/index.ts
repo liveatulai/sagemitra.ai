@@ -57,25 +57,27 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    // Enhanced prompt for photo-realistic portraits of the actual person/character
-    const enhancedPrompt = `Generate a photo-realistic professional portrait of ${prompt}.
+    // Prompt for close-up photo-realistic portraits like existing avatars (Einstein, Musk, Aphrodite style)
+    const enhancedPrompt = `Extreme close-up portrait photograph of ${prompt}, head and shoulders only.
 
-IMPORTANT: This must look exactly like ${prompt} - their actual recognizable face and features.
+CRITICAL - This must be a REAL PHOTOGRAPH of ${prompt}, showing their ACTUAL FACE with accurate recognizable features.
 
-Style requirements:
-- Professional studio headshot photography
-- Soft key lighting with subtle fill light
-- Dark gradient background (charcoal to black)
-- Sharp focus on the eyes and face
-- Dignified, thoughtful expression
-- High-end editorial magazine quality
-- Circular avatar composition
-- The person must be instantly recognizable as ${prompt}
-- Ultra realistic, NOT illustration or cartoon`;
+STYLE REFERENCE (match exactly):
+- Tight close-up framing: face fills 80% of the frame
+- Professional studio lighting: soft diffused key light from front-left
+- Pure black background, no gradients
+- Ultra sharp focus on eyes
+- Natural skin texture visible
+- Serious, contemplative expression looking slightly off-camera
+- Color grading: slightly desaturated, muted warm tones
+- Shot on medium format camera, shallow depth of field
+- Magazine editorial portrait quality (like TIME magazine covers)
 
-    console.log('Generating image with Lovable AI Gemini:', enhancedPrompt);
+OUTPUT: Photorealistic image only. No text, no borders, no watermarks.`;
 
-    // Generate image using Lovable AI with Gemini model
+    console.log('Generating close-up portrait with Nano Banana Pro:', prompt);
+
+    // Generate image using Lovable AI with Nano Banana Pro model
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -83,7 +85,7 @@ Style requirements:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-image-preview',
+        model: 'google/gemini-3-pro-image-preview',
         messages: [{
           role: 'user',
           content: enhancedPrompt
