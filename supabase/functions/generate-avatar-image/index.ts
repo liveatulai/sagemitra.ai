@@ -57,15 +57,27 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    // Enhanced prompt to match existing avatar style
-    const enhancedPrompt = `Professional circular portrait photograph of ${prompt}. 
-Style: High-quality historical portrait, serious and dignified expression, neutral background, 
-sharp focus on face, vintage or classical photography aesthetic. 
-Circular crop suitable for avatar. Photorealistic, professional lighting.`;
+    // Enhanced prompt for photo-realistic portraits matching existing avatar style
+    const enhancedPrompt = `Create a hyper-realistic, photo-realistic portrait photograph of ${prompt}. 
 
-    console.log('Generating image with prompt:', enhancedPrompt);
+CRITICAL REQUIREMENTS:
+- Ultra high resolution professional headshot photograph
+- Photo-realistic skin texture with natural pores, subtle imperfections, and realistic lighting on skin
+- Natural eye reflections and catchlights, detailed iris patterns
+- Realistic hair with individual strand details and natural highlights
+- Professional studio lighting: soft key light, subtle fill, and rim lighting for depth
+- Shallow depth of field with sharp focus on eyes and face
+- Neutral dark gradient background (dark gray to black)
+- Subject facing camera at slight 3/4 angle
+- Serious, contemplative, dignified expression
+- Natural skin tones and color grading similar to high-end magazine portraits
+- Style reference: Annie Leibovitz or Martin Schoeller portrait photography
+- Circular crop composition suitable for avatar/profile picture use
+- NO illustration, NO painting, NO cartoon, NO artistic stylization - ONLY photographic realism`;
 
-    // Generate image using Lovable AI
+    console.log('Generating photo-realistic image with prompt:', enhancedPrompt);
+
+    // Generate image using Lovable AI with the best image model
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -73,7 +85,7 @@ Circular crop suitable for avatar. Photorealistic, professional lighting.`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-image-preview',
+        model: 'google/gemini-3-pro-image-preview',
         messages: [{
           role: 'user',
           content: enhancedPrompt
