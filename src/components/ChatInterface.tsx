@@ -599,6 +599,15 @@ export default function ChatInterface() {
                   </div>
                   <span className="chat-avatar-title text-xs text-muted-foreground hidden md:block">{avatar.title}</span>
                 </div>
+                {/* Export Button */}
+                <ChatExport 
+                  messages={messages.map(m => ({ 
+                    role: m.role as "user" | "assistant", 
+                    content: m.content, 
+                    created_at: m.created_at 
+                  }))} 
+                  avatarName={avatar.name} 
+                />
                 {/* Divine Typing Aura */}
                 {sending && <div className="typing-aura" />}
               </>
