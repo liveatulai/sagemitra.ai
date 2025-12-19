@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, MessageSquare, Users, Trophy, Zap, Shield, ArrowRight, Star, CheckCircle } from "lucide-react";
+import { Sparkles, MessageSquare, Users, Trophy, Zap, Shield, ArrowRight, Star, CheckCircle, Flower2 } from "lucide-react";
 import buddhaImg from "@/assets/avatars/buddha.jpg";
 import ramanaImg from "@/assets/avatars/ramana.jpg";
 import teslaImg from "@/assets/avatars/tesla.jpg";
@@ -98,6 +98,9 @@ export default function Landing() {
       {/* Hero Section */}
       <section className="container mx-auto px-4 py-16 sm:py-24 animate-fade-in">
         <div className="text-center space-y-8 max-w-4xl mx-auto">
+          <div className="flex justify-center mb-4">
+            <Flower2 className="h-16 w-16 sm:h-20 sm:w-20 text-primary" />
+          </div>
           
           <Badge className="mx-auto" variant="secondary">
             <Sparkles className="w-3 h-3 mr-1" />
