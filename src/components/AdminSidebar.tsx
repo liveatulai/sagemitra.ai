@@ -36,6 +36,18 @@ export default function AdminSidebar({ activeTab, onTabChange, isOpen, onToggle 
 
   return (
     <>
+      {/* Mobile Toggle Button - Always visible on mobile when sidebar closed */}
+      {!isOpen && (
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={onToggle}
+          className="fixed top-4 left-4 z-50 lg:hidden shadow-lg bg-card"
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+      )}
+
       {/* Mobile Overlay */}
       {isOpen && (
         <div 
@@ -49,7 +61,7 @@ export default function AdminSidebar({ activeTab, onTabChange, isOpen, onToggle 
         className={cn(
           "fixed left-0 top-0 h-full bg-card border-r z-50 transition-all duration-300",
           "flex flex-col",
-          isOpen ? "w-64" : "w-0 lg:w-16"
+          isOpen ? "w-64 translate-x-0" : "-translate-x-full lg:translate-x-0 lg:w-16"
         )}
       >
         {/* Header */}
@@ -86,7 +98,13 @@ export default function AdminSidebar({ activeTab, onTabChange, isOpen, onToggle 
                     !isOpen && "lg:justify-center lg:px-2",
                     isActive && "bg-gradient-to-r from-primary to-accent shadow-md"
                   )}
-                  onClick={() => onTabChange(item.id)}
+                  onClick={() => {
+                    onTabChange(item.id);
+                    // Close sidebar on mobile after selection
+                    if (window.innerWidth < 1024) {
+                      onToggle();
+                    }
+                  }}
                 >
                   <Icon className="h-5 w-5 shrink-0" />
                   {isOpen && <span className="truncate">{item.label}</span>}
