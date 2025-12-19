@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sparkles, Upload, Loader2, Save, Link as LinkIcon, Trash2, ChevronDown, ChevronUp, Search, X, ZoomIn } from "lucide-react";
+import { Sparkles, Upload, Loader2, Save, Link as LinkIcon, Trash2, ChevronDown, ChevronUp, Search, X, ZoomIn, Crop } from "lucide-react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,6 +14,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Label } from "@/components/ui/label";
 import SafeComponent from "./SafeComponent";
 import VoiceUploader from "./VoiceUploader";
+import ImageCropper from "./ImageCropper";
 import { z } from "zod";
 
 const avatarSchema = z.object({
@@ -87,6 +88,10 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
   const [customSearchQuery, setCustomSearchQuery] = useState("");
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
   const [pasteImageUrl, setPasteImageUrl] = useState("");
+  const [pastePreviewUrl, setPastePreviewUrl] = useState<string | null>(null);
+  const [pastePreviewError, setPastePreviewError] = useState(false);
+  const [showCropper, setShowCropper] = useState(false);
+  const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
@@ -397,9 +402,70 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
       setShowImageSearch(true); // Ensure the panel is open to show options
       selectReferenceImage(pasteImageUrl.trim());
       setPasteImageUrl("");
+      setPastePreviewUrl(null);
+      setPastePreviewError(false);
     } catch {
       toast.error("Invalid URL format");
     }
+  };
+
+  // Update preview when paste URL changes
+  const handlePasteUrlChange = (url: string) => {
+    setPasteImageUrl(url);
+    setPastePreviewError(false);
+    
+    // Check if it's a valid URL for preview
+    try {
+      if (url.trim()) {
+        new URL(url);
+        setPastePreviewUrl(url.trim());
+      } else {
+        setPastePreviewUrl(null);
+      }
+    } catch {
+      setPastePreviewUrl(null);
+    }
+  };
+
+  // Handle crop completion
+  const handleCropComplete = async (croppedDataUrl: string) => {
+    try {
+      // Convert data URL to blob
+      const response = await fetch(croppedDataUrl);
+      const blob = await response.blob();
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("Please log in to save cropped image");
+        return;
+      }
+
+      const fileName = `${avatar.id}-${Date.now()}.png`;
+      const filePath = `${user.id}/${fileName}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('avatar-images')
+        .upload(filePath, blob);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatar-images')
+        .getPublicUrl(filePath);
+      
+      const newUrl = `${publicUrl}?t=${Date.now()}`;
+      setEditedAvatar({ ...editedAvatar, image_url: newUrl, image_source: 'cropped' });
+      setPreviewUrl(newUrl);
+      toast.success("Image cropped and saved!");
+    } catch (error: any) {
+      console.error('Error saving cropped image:', error);
+      toast.error(error.message || "Failed to save cropped image");
+    }
+  };
+
+  const openCropper = (imageUrl: string) => {
+    setCropImageUrl(imageUrl);
+    setShowCropper(true);
   };
 
   const selectReferenceImage = (url: string) => {
@@ -691,13 +757,26 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                     </div>
                   </div>
                 ) : previewUrl ? (
-                  <img
-                    src={previewUrl}
-                    alt={editedAvatar.name}
-                    className="w-full h-full object-cover"
-                    style={{ aspectRatio: '1/1' }}
-                    key={previewUrl}
-                  />
+                  <div className="relative w-full h-full group">
+                    <img
+                      src={previewUrl}
+                      alt={editedAvatar.name}
+                      className="w-full h-full object-cover"
+                      style={{ aspectRatio: '1/1' }}
+                      key={previewUrl}
+                    />
+                    {/* Crop button overlay */}
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg h-7 px-2"
+                      onClick={() => openCropper(previewUrl)}
+                      title="Crop & Position"
+                    >
+                      <Crop className="w-3 h-3 mr-1" />
+                      Crop
+                    </Button>
+                  </div>
                 ) : (
                   <div className="w-full h-full bg-muted flex items-center justify-center">
                     <Sparkles className="w-8 h-8 text-muted-foreground" />
@@ -801,23 +880,36 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                               {searchingImages ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
                             </Button>
                           </div>
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="Or paste image URL directly..."
-                              value={pasteImageUrl}
-                              onChange={(e) => setPasteImageUrl(e.target.value)}
-                              onKeyDown={(e) => e.key === 'Enter' && usePastedUrl()}
-                              className="h-8 text-xs"
-                            />
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              className="h-8 px-3"
-                              onClick={usePastedUrl}
-                              disabled={!pasteImageUrl.trim()}
-                            >
-                              <LinkIcon className="w-3 h-3" />
-                            </Button>
+                          <div className="flex gap-2 items-start">
+                            {/* Thumbnail preview */}
+                            {pastePreviewUrl && !pastePreviewError && (
+                              <div className="flex-shrink-0 w-10 h-10 rounded border overflow-hidden bg-muted">
+                                <img
+                                  src={pastePreviewUrl}
+                                  alt="Preview"
+                                  className="w-full h-full object-cover"
+                                  onError={() => setPastePreviewError(true)}
+                                />
+                              </div>
+                            )}
+                            <div className="flex-1 flex gap-2">
+                              <Input
+                                placeholder="Or paste image URL directly..."
+                                value={pasteImageUrl}
+                                onChange={(e) => handlePasteUrlChange(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && usePastedUrl()}
+                                className="h-8 text-xs"
+                              />
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="h-8 px-3"
+                                onClick={usePastedUrl}
+                                disabled={!pasteImageUrl.trim()}
+                              >
+                                <LinkIcon className="w-3 h-3" />
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -1291,6 +1383,19 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Image Cropper */}
+    {cropImageUrl && (
+      <ImageCropper
+        imageUrl={cropImageUrl}
+        open={showCropper}
+        onOpenChange={(open) => {
+          setShowCropper(open);
+          if (!open) setCropImageUrl(null);
+        }}
+        onCropComplete={handleCropComplete}
+      />
+    )}
     </SafeComponent>
   );
 }
