@@ -385,12 +385,12 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
   return (
     <SafeComponent>
       <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="h-[95vh] flex flex-col p-0 gap-0 max-w-2xl">
+      <DialogContent className="h-[100dvh] sm:h-[95vh] flex flex-col p-0 gap-0 max-w-2xl w-full sm:w-[95vw] rounded-none sm:rounded-lg">
         <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6 pb-3 border-b flex-shrink-0">
-          <DialogTitle className="text-xl font-semibold">Edit Avatar</DialogTitle>
+          <DialogTitle className="text-lg sm:text-xl font-semibold">Edit Avatar</DialogTitle>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 px-4 sm:px-6 py-4">
+        <ScrollArea className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
           <div className="space-y-6 pb-4">
             {/* Avatar Image Section */}
             <div className="flex flex-col items-center gap-4">
@@ -715,15 +715,25 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
           </div>
         </ScrollArea>
 
-        {/* Footer Actions - Sticky on mobile */}
-        <div className="sticky bottom-0 px-4 sm:px-6 py-3 sm:py-4 border-t flex-shrink-0 bg-background z-10 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
-          <div className="flex gap-2">
-            <Button onClick={saveChanges} disabled={loading} className="flex-1" size="lg">
-              {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-              Save
-            </Button>
-            <Button onClick={() => onOpenChange(false)} variant="outline" size="lg">
+        {/* Footer Actions - Fixed on mobile with safe area */}
+        <div className="flex-shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-t bg-background/95 backdrop-blur-sm pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-4">
+          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3">
+            <Button 
+              onClick={() => onOpenChange(false)} 
+              variant="outline" 
+              size="lg"
+              className="w-full sm:w-auto sm:min-w-[100px]"
+            >
               Cancel
+            </Button>
+            <Button 
+              onClick={saveChanges} 
+              disabled={loading || optimizingDescription || optimizingPersonality} 
+              className="w-full sm:flex-1"
+              size="lg"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+              Save Changes
             </Button>
           </div>
         </div>
