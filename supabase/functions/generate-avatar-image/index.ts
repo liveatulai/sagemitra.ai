@@ -191,22 +191,55 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
       };
     }
 
-    // Generate image using Gemini API directly with imagen model
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
+    // Generate image using Gemini API directly (image generation model)
+    const model = "gemini-2.0-flash-image-generation";
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      }
+    );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Gemini image generation error:', response.status, errorText);
-      
-      if (response.status === 429) {
-        throw new Error('Rate limit exceeded. Please try again in a few moments.');
+      const raw = await response.text();
+      console.error("Gemini image generation error:", response.status, raw);
+
+      // Try to surface retry delay if provided by Gemini
+      let retryAfterSeconds: number | null = null;
+      try {
+        const parsed = JSON.parse(raw);
+        const retryDelay = parsed?.error?.details?.find((d: any) => d?.["@type"] === "type.googleapis.com/google.rpc.RetryInfo")
+          ?.retryDelay as string | undefined;
+        if (retryDelay && typeof retryDelay === "string") {
+          const match = retryDelay.match(/(\d+)/);
+          if (match) retryAfterSeconds = Number(match[1]);
+        }
+      } catch {
+        // ignore json parse errors
       }
-      
-      throw new Error(`Image generation failed: ${response.status}`);
+
+      const friendly =
+        response.status === 429
+          ? "Gemini rate limit reached. Please wait a moment and try again."
+          : response.status === 403
+            ? "Gemini API key is not allowed to generate images (billing/quota may be disabled)."
+            : response.status === 401
+              ? "Gemini API key is invalid or unauthorized."
+              : `Image generation failed (${response.status}).`;
+
+      return new Response(
+        JSON.stringify({
+          error: friendly,
+          status: response.status,
+          retryAfterSeconds,
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: response.status,
+        }
+      );
     }
 
     const data = await response.json();

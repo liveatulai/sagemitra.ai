@@ -102,7 +102,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
 
   const regenerateImage = async () => {
     const validated = imagePromptSchema.safeParse(imagePrompt);
-    
+
     if (!validated.success) {
       toast.error(validated.error.errors[0].message);
       return;
@@ -110,34 +110,58 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
 
     setGeneratingImage(true);
     try {
-      const { data, error } = await supabase.functions.invoke('generate-avatar-image', {
-        body: { 
+      const { data, error } = await supabase.functions.invoke("generate-avatar-image", {
+        body: {
           prompt: validated.data,
-          avatarId: avatar.id
-        }
+          avatarId: avatar.id,
+        },
       });
 
       if (!isMounted) return;
 
       if (error) {
-        console.error('Image generation error:', error);
-        const errorMessage = error.message || data?.error || "Failed to regenerate image";
-        toast.error(errorMessage);
+        console.error("Image generation error:", error);
+        const status = (error as any)?.context?.status as number | undefined;
+        const bodyErr = (error as any)?.context?.body?.error as string | undefined;
+        const retryAfterSeconds = (error as any)?.context?.body?.retryAfterSeconds as number | null | undefined;
+
+        if (status === 429) {
+          toast.error(
+            retryAfterSeconds
+              ? `Gemini rate limit reached. Try again in ~${retryAfterSeconds}s.`
+              : "Gemini rate limit reached. Please try again shortly."
+          );
+          return;
+        }
+
+        toast.error(bodyErr || error.message || data?.error || "Failed to regenerate image");
         return;
       }
 
       if (data?.imageUrl) {
         const newUrl = `${data.imageUrl}?t=${Date.now()}`;
-        setEditedAvatar({ ...editedAvatar, image_url: newUrl, image_source: 'ai-generated' });
+        setEditedAvatar({ ...editedAvatar, image_url: newUrl, image_source: "ai-generated" });
         setPreviewUrl(newUrl);
         toast.success("Image regenerated successfully!");
         setImagePrompt("");
       }
     } catch (error: any) {
-      console.error('Error in regenerateImage:', error);
+      console.error("Error in regenerateImage:", error);
       if (!isMounted) return;
-      const errorMessage = error.context?.body?.error || error.message || "Failed to regenerate image";
-      toast.error(errorMessage);
+      const status = error?.context?.status as number | undefined;
+      const bodyErr = error?.context?.body?.error as string | undefined;
+      const retryAfterSeconds = error?.context?.body?.retryAfterSeconds as number | null | undefined;
+
+      if (status === 429) {
+        toast.error(
+          retryAfterSeconds
+            ? `Gemini rate limit reached. Try again in ~${retryAfterSeconds}s.`
+            : "Gemini rate limit reached. Please try again shortly."
+        );
+        return;
+      }
+
+      toast.error(bodyErr || error.message || "Failed to regenerate image");
     } finally {
       if (isMounted) {
         setGeneratingImage(false);
@@ -500,29 +524,42 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
 
   const generateFromReference = async () => {
     if (!selectedReferenceUrl) return;
-    
+
     setGeneratingFromReference(true);
     try {
-      const { data, error } = await supabase.functions.invoke('generate-avatar-image', {
-        body: { 
-          prompt: editedAvatar.name || 'portrait',
+      const { data, error } = await supabase.functions.invoke("generate-avatar-image", {
+        body: {
+          prompt: editedAvatar.name || "portrait",
           avatarId: avatar.id,
-          referenceImageUrl: selectedReferenceUrl
-        }
+          referenceImageUrl: selectedReferenceUrl,
+        },
       });
 
       if (error) throw error;
 
       if (data?.imageUrl) {
         const newUrl = `${data.imageUrl}?t=${Date.now()}`;
-        setEditedAvatar({ ...editedAvatar, image_url: newUrl, image_source: 'ai-generated' });
+        setEditedAvatar({ ...editedAvatar, image_url: newUrl, image_source: "ai-generated" });
         setPreviewUrl(newUrl);
         toast.success("AI avatar generated from reference!");
         closeImageSearch();
       }
     } catch (error: any) {
-      console.error('Error generating from reference:', error);
-      toast.error(error.message || "Failed to generate image. Try again.");
+      console.error("Error generating from reference:", error);
+      const status = error?.context?.status as number | undefined;
+      const bodyErr = error?.context?.body?.error as string | undefined;
+      const retryAfterSeconds = error?.context?.body?.retryAfterSeconds as number | null | undefined;
+
+      if (status === 429) {
+        toast.error(
+          retryAfterSeconds
+            ? `Gemini rate limit reached. Try again in ~${retryAfterSeconds}s.`
+            : "Gemini rate limit reached. Please try again shortly."
+        );
+        return;
+      }
+
+      toast.error(bodyErr || error.message || "Failed to generate image. Try again.");
     } finally {
       setGeneratingFromReference(false);
     }
