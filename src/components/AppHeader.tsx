@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Home, MessageSquare, Users, BarChart3, Shield } from "lucide-react";
+import { Home, MessageSquare, Users, BarChart3, Shield, Flower2 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "./ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -45,6 +45,7 @@ export default function AppHeader() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
+            <Flower2 className="h-8 w-8 text-primary" />
             <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
               SageMitra
             </h1>

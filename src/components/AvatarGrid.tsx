@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Edit, LogIn, LogOut, Shield, MessageSquare, CreditCard, Star, Tag } from "lucide-react";
+import { Plus, Edit, LogIn, LogOut, Shield, MessageSquare, CreditCard, Star, Tag, Flower2 } from "lucide-react";
 import { toast } from "sonner";
 import AvatarEditor from "./AvatarEditor";
 import AvatarFilters from "./AvatarFilters";
@@ -329,11 +329,14 @@ export default function AvatarGrid() {
         <header className="sticky top-0 z-50 bg-background/95 backdrop-blur-xl border-b border-border/50 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 shadow-sm">
           <div className="flex items-center justify-between h-14 sm:h-16">
             {/* Logo */}
-            <div className="flex-1 min-w-0">
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                SageMitra
-              </h1>
-              <p className="text-[10px] text-muted-foreground hidden sm:block">Chat with legendary minds</p>
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <Flower2 className="h-8 w-8 sm:h-10 sm:w-10 text-primary shrink-0" />
+              <div>
+                <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                  SageMitra
+                </h1>
+                <p className="text-[10px] text-muted-foreground hidden sm:block">Chat with legendary minds</p>
+              </div>
             </div>
             
             {/* Actions - Compact */}
