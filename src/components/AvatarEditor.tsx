@@ -23,17 +23,20 @@ const avatarSchema = z.object({
     .max(100, "Name must be less than 100 characters"),
   title: z.string()
     .max(150, "Title must be less than 150 characters")
-    .optional(),
+    .optional()
+    .or(z.literal("")),
   description: z.string()
     .max(1000, "Description must be less than 1000 characters")
-    .optional(),
+    .optional()
+    .or(z.literal("")),
   personality_prompt: z.string()
     .trim()
-    .min(1, "Personality prompt is required")
-    .max(10000, "Personality prompt must be less than 10,000 characters"),
+    .min(1, "Personality Prompt is required")
+    .max(10000, "Personality Prompt must be less than 10,000 characters"),
   knowledge_base: z.string()
-    .max(50000, "Knowledge base must be less than 50,000 characters")
+    .max(50000, "Knowledge Base must be less than 50,000 characters")
     .optional()
+    .or(z.literal(""))
 });
 
 const imagePromptSchema = z.string()
@@ -292,7 +295,9 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     });
 
     if (!validated.success) {
-      toast.error(validated.error.errors[0].message);
+      // Show all validation errors with field names
+      const errorMessages = validated.error.errors.map(err => err.message).join(", ");
+      toast.error(errorMessages);
       return;
     }
 
