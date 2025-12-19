@@ -136,14 +136,30 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
         retryAfterSeconds = parseInt(retryHeader, 10);
       }
 
-      const friendly =
-        response.status === 429
-          ? "Rate limit reached. Please wait a moment and try again."
-          : response.status === 403
-            ? "API access denied (billing/quota may be disabled)."
-            : response.status === 401
-              ? "OpenAI API key is invalid or unauthorized."
-              : `Image generation failed (${response.status}).`;
+      let friendly = `Image generation failed (${response.status}).`;
+
+      // Surface common OpenAI billing/quota errors clearly
+      try {
+        const parsed = JSON.parse(raw);
+        const code = parsed?.error?.code as string | undefined;
+        const msg = parsed?.error?.message as string | undefined;
+
+        if (code === "billing_hard_limit_reached") {
+          friendly = "OpenAI billing hard limit reached. Please add billing/credits to your OpenAI account, or switch image generation to Lovable Nano banana.";
+        } else if (msg && /quota|billing/i.test(msg)) {
+          friendly = msg;
+        }
+      } catch {
+        // ignore
+      }
+
+      if (response.status === 429) {
+        friendly = "Rate limit reached. Please wait a moment and try again.";
+      } else if (response.status === 403) {
+        friendly = "API access denied (billing/quota may be disabled).";
+      } else if (response.status === 401) {
+        friendly = "OpenAI API key is invalid or unauthorized.";
+      }
 
       return new Response(
         JSON.stringify({
