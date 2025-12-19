@@ -50,11 +50,13 @@ serve(async (req) => {
     }
 
     // Build search query based on source filter
-    let searchQuery = `${query} official portrait photo high quality`;
+    let searchQuery = `${query} portrait photo high quality`;
     if (sourceFilter === 'wikipedia') {
       searchQuery = `${query} site:wikipedia.org OR site:wikimedia.org portrait photo`;
     } else if (sourceFilter === 'official') {
       searchQuery = `${query} official portrait photo`;
+    } else if (sourceFilter === 'google') {
+      searchQuery = `${query} portrait photo image`;
     }
     
     console.log('Searching for reference images:', searchQuery, 'limit:', limit, 'offset:', offset);

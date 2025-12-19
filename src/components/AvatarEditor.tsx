@@ -79,7 +79,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
   const [showImageSearch, setShowImageSearch] = useState(false);
   const [selectedReferenceUrl, setSelectedReferenceUrl] = useState<string | null>(null);
   const [generatingFromReference, setGeneratingFromReference] = useState(false);
-  const [imageSourceFilter, setImageSourceFilter] = useState<'all' | 'wikipedia' | 'official'>('all');
+  const [imageSourceFilter, setImageSourceFilter] = useState<'all' | 'wikipedia' | 'official' | 'google'>('all');
   const [hasMoreImages, setHasMoreImages] = useState(false);
   const [imageOffset, setImageOffset] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -702,7 +702,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                       
                       {/* Source Filter */}
                       {!selectedReferenceUrl && referenceImages.length > 0 && (
-                        <div className="flex gap-1 mb-3">
+                        <div className="flex gap-1 mb-3 flex-wrap">
                           <Button
                             size="sm"
                             variant={imageSourceFilter === 'all' ? 'default' : 'outline'}
@@ -710,6 +710,14 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                             onClick={() => { setImageSourceFilter('all'); setTimeout(startImageSearch, 0); }}
                           >
                             All
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={imageSourceFilter === 'google' ? 'default' : 'outline'}
+                            className="h-6 text-xs px-2"
+                            onClick={() => { setImageSourceFilter('google'); setTimeout(startImageSearch, 0); }}
+                          >
+                            Google
                           </Button>
                           <Button
                             size="sm"
