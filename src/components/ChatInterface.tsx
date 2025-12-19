@@ -86,13 +86,18 @@ export default function ChatInterface() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement>>({});
 
+  const welcomeSentRef = useRef(false);
+
   useEffect(() => {
+    welcomeSentRef.current = false; // Reset when session changes
     loadSession();
-    subscribeToMessages();
+    const cleanup = subscribeToMessages();
+    return cleanup;
   }, [sessionId]);
 
   useEffect(() => {
-    if (avatar && sessionId) {
+    if (avatar && sessionId && !welcomeSentRef.current) {
+      welcomeSentRef.current = true;
       sendWelcomeMessage();
     }
   }, [avatar, sessionId]);
