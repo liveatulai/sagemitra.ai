@@ -64,9 +64,10 @@ serve(async (req) => {
     const validatedData = fetchImageSchema.parse(body);
     const { imageUrl, avatarId } = validatedData;
 
-    console.log("Fetching image from URL");
+    console.log("Fetching image from URL:", imageUrl);
 
     // Validate URL format and security
+    let finalUrl = imageUrl;
     const url = new URL(imageUrl);
     
     // Block non-HTTP(S) schemes
@@ -79,16 +80,57 @@ serve(async (req) => {
       throw new Error("Access to private networks is not allowed");
     }
 
+    // Handle Wikipedia/Wikimedia file pages - extract actual image URL
+    if (url.hostname.includes('wikipedia.org') && url.pathname.startsWith('/wiki/File:')) {
+      console.log("Detected Wikipedia file page, extracting actual image URL");
+      const fileName = decodeURIComponent(url.pathname.replace('/wiki/File:', ''));
+      // Convert to Wikimedia Commons direct URL
+      finalUrl = `https://upload.wikimedia.org/wikipedia/commons/${fileName}`;
+      // If that doesn't work, try the thumb version
+      console.log("Trying direct Wikimedia URL:", finalUrl);
+    }
+
     // Fetch the image with timeout
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    const timeout = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
-    const response = await fetch(imageUrl, {
+    let response = await fetch(finalUrl, {
       signal: controller.signal,
       headers: {
-        "User-Agent": "SageMitra/1.0",
+        "User-Agent": "Mozilla/5.0 (compatible; SageMitra/1.0)",
+        "Accept": "image/*,*/*;q=0.8",
       },
+      redirect: 'follow',
     });
+
+    // If Wikipedia direct URL fails, try to get image from the file page HTML
+    if (!response.ok && url.hostname.includes('wikipedia.org')) {
+      console.log("Direct URL failed, trying to fetch from file page");
+      const pageResponse = await fetch(imageUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; SageMitra/1.0)",
+        },
+      });
+      
+      if (pageResponse.ok) {
+        const html = await pageResponse.text();
+        // Extract full resolution image URL from the page
+        const match = html.match(/href="(https:\/\/upload\.wikimedia\.org\/wikipedia\/commons\/[^"]+\.(jpg|jpeg|png|webp|gif))"/i);
+        if (match) {
+          finalUrl = match[1];
+          console.log("Found image URL in page:", finalUrl);
+          response = await fetch(finalUrl, {
+            signal: controller.signal,
+            headers: {
+              "User-Agent": "Mozilla/5.0 (compatible; SageMitra/1.0)",
+              "Accept": "image/*,*/*;q=0.8",
+            },
+            redirect: 'follow',
+          });
+        }
+      }
+    }
+    
     clearTimeout(timeout);
 
     if (!response.ok) {
@@ -98,6 +140,7 @@ serve(async (req) => {
     // Check content type
     const contentType = response.headers.get("content-type");
     if (!contentType || !contentType.startsWith("image/")) {
+      console.error("Invalid content type:", contentType, "for URL:", finalUrl);
       throw new Error("URL does not point to an image");
     }
 
