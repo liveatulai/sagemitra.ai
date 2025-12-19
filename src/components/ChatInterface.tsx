@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Menu, Send, Mic, MicOff, X, ArrowLeft } from "lucide-react";
+import { Menu, Send, X, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import ChatHistorySidebar from "./ChatHistorySidebar";
 import ChatMessage from "./ChatMessage";
@@ -12,6 +12,7 @@ import ChatExport from "./ChatExport";
 import ChatExportEnhanced from "./ChatExportEnhanced";
 import PresenceLayer from "./PresenceLayer";
 import AutoExpandTextarea from "./AutoExpandTextarea";
+import VoiceInputButton from "./VoiceInputButton";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import einsteinImg from "@/assets/avatars/einstein.jpg";
 import ramanaImg from "@/assets/avatars/ramana.jpg";
@@ -78,7 +79,6 @@ export default function ChatInterface() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [regenerateCounts, setRegenerateCounts] = useState<Record<string, number>>({});
   const [presenceEnabled, setPresenceEnabled] = useState(true);
@@ -754,30 +754,25 @@ export default function ChatInterface() {
               </div>
             )}
             <div className="flex gap-2 items-end">
-              <Button
-                type="button"
-                variant={isVoiceMode ? "default" : "outline"}
-                size="icon"
-                onClick={() => {
-                  setIsVoiceMode(!isVoiceMode);
-                  toast.info(isVoiceMode ? "Voice mode disabled" : "Voice mode enabled (coming soon)");
+              <VoiceInputButton
+                onTranscript={(text) => {
+                  setInput(prev => prev ? `${prev} ${text}` : text);
                 }}
+                disabled={sending}
                 className="shrink-0 h-12 w-12"
-              >
-                {isVoiceMode ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-              </Button>
+              />
               <AutoExpandTextarea
                 value={input}
                 onChange={setInput}
                 placeholder="Type your message..."
-                disabled={sending || isVoiceMode}
+                disabled={sending}
                 className="flex-1 rounded-2xl text-base px-6 py-3"
                 minHeight={48}
                 maxHeight={200}
               />
               <Button
                 type="submit"
-                disabled={!input.trim() || sending || isVoiceMode}
+                disabled={!input.trim() || sending}
                 size="icon"
                 className="shrink-0 rounded-full h-12 w-12"
               >
