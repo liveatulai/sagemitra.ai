@@ -69,7 +69,10 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         query: searchQuery,
-        limit: Math.min(limit + 5, 20), // Reduced for faster response
+        limit: Math.min(limit + 5, 15),
+        scrapeOptions: {
+          formats: ['links'],
+        }
       }),
     });
 
@@ -83,7 +86,7 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    console.log('Firecrawl search response:', JSON.stringify(data).substring(0, 500));
+    console.log('Firecrawl search response:', JSON.stringify(data).substring(0, 800));
 
     // Extract image URLs from search results
     const images: { url: string; source: string; trusted: boolean }[] = [];
@@ -93,10 +96,10 @@ serve(async (req) => {
     const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
     const isDirectImageUrl = (url: string) => {
       const lower = url.toLowerCase();
-      // Must have supported image extension AND not be a Wikipedia file page
+      // Check for image extension in URL
       const hasImageExt = imageExtensions.some(ext => lower.includes(ext));
       const isWikiFilePage = lower.includes('wikipedia.org/wiki/file:');
-      const isGif = lower.includes('.gif'); // Explicitly exclude GIFs
+      const isGif = lower.includes('.gif');
       return hasImageExt && !isWikiFilePage && !isGif;
     };
 
@@ -116,6 +119,14 @@ serve(async (req) => {
       }
     };
 
+    // Helper to extract image URLs from text content
+    const extractImageUrls = (text: string) => {
+      if (!text) return [];
+      const urlRegex = /https?:\/\/[^\s"'<>]+\.(jpg|jpeg|png|webp)(\?[^\s"'<>]*)?/gi;
+      const matches = text.match(urlRegex) || [];
+      return matches.filter(url => !url.toLowerCase().includes('.gif'));
+    };
+
     // Process search results to find image URLs
     if (data.data && Array.isArray(data.data)) {
       for (const result of data.data) {
@@ -132,28 +143,100 @@ serve(async (req) => {
           }
         }
 
+        // Extract images from markdown content
+        if (result.markdown) {
+          const markdownImages = extractImageUrls(result.markdown);
+          for (const imgUrl of markdownImages) {
+            if (!seenUrls.has(imgUrl)) {
+              seenUrls.add(imgUrl);
+              images.push({
+                url: imgUrl,
+                source: getSourceName(imgUrl),
+                trusted: isTrustedSource(imgUrl)
+              });
+            }
+          }
+        }
+
         // Check links from scraped pages
         if (result.links && Array.isArray(result.links)) {
           for (const link of result.links) {
             if (isDirectImageUrl(link) && !seenUrls.has(link)) {
-              // Filter for likely portrait/face images
-              const lower = link.toLowerCase();
-              if (lower.includes('portrait') || lower.includes('photo') || 
-                  lower.includes('face') || lower.includes('image') ||
-                  lower.includes('wiki') || lower.includes('thumb') ||
-                  lower.includes('upload') || lower.includes('media')) {
-                seenUrls.add(link);
+              seenUrls.add(link);
+              images.push({
+                url: link,
+                source: getSourceName(link),
+                trusted: isTrustedSource(link)
+              });
+            }
+          }
+        }
+
+        // If still no images, try to construct Wikipedia/Wikimedia image URLs from the page URL
+        if (result.url && result.url.includes('wikipedia.org')) {
+          // Try common Wikipedia image patterns
+          const wikiTitle = result.url.split('/wiki/')[1];
+          if (wikiTitle) {
+            const potentialImageUrl = `https://upload.wikimedia.org/wikipedia/commons/thumb/${wikiTitle.charAt(0).toLowerCase()}/${wikiTitle.substring(0, 2).toLowerCase()}/${encodeURIComponent(wikiTitle)}.jpg/400px-${encodeURIComponent(wikiTitle)}.jpg`;
+            // We won't add this since it's unreliable, but log for debugging
+            console.log('Wikipedia page found:', result.url);
+          }
+        }
+      }
+    }
+
+    // If no images found from scraping, try a direct image search approach
+    if (images.length === 0) {
+      console.log('No images from scrape, trying image-specific search...');
+      
+      // Try a more image-focused query
+      const imageSearchQuery = `${query} image filetype:jpg OR filetype:png`;
+      const imageResponse = await fetch('https://api.firecrawl.dev/v1/search', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: imageSearchQuery,
+          limit: 10,
+        }),
+      });
+
+      if (imageResponse.ok) {
+        const imageData = await imageResponse.json();
+        console.log('Image-specific search response:', JSON.stringify(imageData).substring(0, 500));
+        
+        if (imageData.data && Array.isArray(imageData.data)) {
+          for (const result of imageData.data) {
+            // Check og:image from these results
+            if (result.metadata?.ogImage && !seenUrls.has(result.metadata.ogImage)) {
+              const url = result.metadata.ogImage;
+              if (!url.toLowerCase().includes('.gif')) {
+                seenUrls.add(url);
                 images.push({
-                  url: link,
-                  source: getSourceName(link),
-                  trusted: isTrustedSource(link)
+                  url,
+                  source: getSourceName(result.url || url),
+                  trusted: isTrustedSource(result.url || url)
                 });
               }
+            }
+            
+            // Also check if the URL itself is an image
+            if (result.url && isDirectImageUrl(result.url) && !seenUrls.has(result.url)) {
+              seenUrls.add(result.url);
+              images.push({
+                url: result.url,
+                source: getSourceName(result.url),
+                trusted: isTrustedSource(result.url)
+              });
             }
           }
         }
       }
     }
+
+    console.log(`Extracted ${images.length} images from search results`);
 
     // Sort: trusted sources first, then by source name
     images.sort((a, b) => {
