@@ -12,7 +12,6 @@ const chatRequestSchema = z.object({
   sessionId: z.string().uuid(),
   message: z.string().min(1).max(10000),
   avatarId: z.string().uuid(),
-  // avatarName and personalityPrompt removed - must be fetched from DB to prevent prompt injection
 });
 
 serve(async (req) => {
@@ -32,9 +31,10 @@ serve(async (req) => {
       );
     }
 
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) {
-      console.error('GEMINI_API_KEY not configured');
+    // Use Lovable AI API key
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) {
+      console.error('LOVABLE_API_KEY not configured');
       return new Response(
         JSON.stringify({ error: 'SERVICE_UNAVAILABLE', code: 'E001' }),
         { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -82,7 +82,7 @@ serve(async (req) => {
       );
     }
 
-    // Robust avatar lookup: (a) user_avatars, (b) avatars, (c) fallback by name/image
+    // Robust avatar lookup: (a) user_avatars, (b) avatars
     let avatar = null;
     let knowledgeBase = null;
     let lookupPath = "";
@@ -118,8 +118,6 @@ serve(async (req) => {
         lookupPath = "avatars.id";
       }
     }
-
-    // Fallback by ID only is now sufficient - name-based fallback removed for security
 
     if (!avatar) {
       console.error(`Avatar not found. avatarId: ${avatarId}`);
@@ -201,44 +199,46 @@ BONDING STYLE: ${profile.bonding_style}`;
     // SECURITY: Use avatar name from database
     systemPrompt += `\n\nYou are ${avatar.name}. Stay in character and provide thoughtful, wise responses that reflect your personality and teachings.`;
 
-    // Format conversation history for Gemini
-    const conversationText = recentHistory.map(msg => 
-      `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
-    ).join('\n\n');
+    // Format conversation history for the AI
+    const messages = [
+      { role: "system", content: systemPrompt }
+    ];
 
-    const fullPrompt = `${systemPrompt}\n\n${conversationText ? 'Conversation so far:\n' + conversationText + '\n\n' : ''}User: ${message}\n\nAssistant:`;
+    // Add conversation history
+    for (const msg of recentHistory) {
+      messages.push({
+        role: msg.role === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      });
+    }
 
-    // Call Google Gemini API
-    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+    // Add current message
+    messages.push({ role: "user", content: message });
+
+    // Call Lovable AI API (OpenAI-compatible endpoint)
+    const aiResponse = await fetch("https://api.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Authorization": `Bearer ${LOVABLE_API_KEY}`,
       },
       body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: fullPrompt
-          }]
-        }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 2000,
-        }
+        model: "google/gemini-2.5-flash",
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 2000,
       }),
     });
 
     if (!aiResponse.ok) {
       let errorText = "";
-      let errorData: any = null;
-      
       try {
         errorText = await aiResponse.text();
-        errorData = JSON.parse(errorText);
       } catch {
-        // If JSON parsing fails, use the raw text
+        errorText = "Unknown error";
       }
       
-      console.error("Gemini API error:", aiResponse.status, errorText);
+      console.error("Lovable AI API error:", aiResponse.status, errorText);
       
       if (aiResponse.status === 429) {
         return new Response(
@@ -250,24 +250,21 @@ BONDING STYLE: ${profile.bonding_style}`;
         );
       }
       
-      // Return the actual error message from Gemini if available
-      const errorMessage = errorData?.error?.message || errorText || 'AI service error';
-      
       return new Response(
         JSON.stringify({ 
-          error: errorMessage,
+          error: 'AI service error',
           code: 'E003',
-          details: `Gemini API returned status ${aiResponse.status}`
+          details: `API returned status ${aiResponse.status}`
         }),
         { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const aiData = await aiResponse.json();
-    const assistantMessage = aiData.candidates?.[0]?.content?.parts?.[0]?.text;
+    const assistantMessage = aiData.choices?.[0]?.message?.content;
 
     if (!assistantMessage) {
-      console.error("No message in Gemini response:", JSON.stringify(aiData));
+      console.error("No message in AI response:", JSON.stringify(aiData));
       return new Response(
         JSON.stringify({ 
           error: "Failed to get response from AI",
@@ -292,27 +289,23 @@ User: ${message}
 Assistant: ${assistantMessage}`;
 
     try {
-      const suggestionsResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+      const suggestionsResponse = await fetch("https://api.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${LOVABLE_API_KEY}`,
         },
         body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: suggestionsPrompt
-            }]
-          }],
-          generationConfig: {
-            temperature: 0.8,
-            maxOutputTokens: 150,
-          }
+          model: "google/gemini-2.5-flash-lite",
+          messages: [{ role: "user", content: suggestionsPrompt }],
+          temperature: 0.8,
+          max_tokens: 150,
         }),
       });
 
       if (suggestionsResponse.ok) {
         const suggestionsData = await suggestionsResponse.json();
-        const suggestionsText = suggestionsData.candidates?.[0]?.content?.parts?.[0]?.text;
+        const suggestionsText = suggestionsData.choices?.[0]?.message?.content;
         if (suggestionsText) {
           const suggestions = JSON.parse(suggestionsText.replace(/```json\n?|\n?```/g, ''));
           
