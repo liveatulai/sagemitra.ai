@@ -84,8 +84,8 @@ The image must accurately depict ${prompt} with their recognizable features and 
         prompt: enhancedPrompt,
         n: 1,
         size: '1024x1024',
-        quality: 'high',
-        response_format: 'b64_json'
+        quality: 'high'
+        // Note: gpt-image-1 always returns base64, no response_format needed
       }),
     });
 
