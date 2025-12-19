@@ -216,7 +216,7 @@ BONDING STYLE: ${profile.bonding_style}`;
     messages.push({ role: "user", content: message });
 
     // Call Lovable AI API (OpenAI-compatible endpoint)
-    const aiResponse = await fetch("https://api.lovable.dev/v1/chat/completions", {
+    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -289,7 +289,7 @@ User: ${message}
 Assistant: ${assistantMessage}`;
 
     try {
-      const suggestionsResponse = await fetch("https://api.lovable.dev/v1/chat/completions", {
+      const suggestionsResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
