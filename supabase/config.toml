@@ -1,1 +1,52 @@
 project_id = "qsuttjrbnoeyjcpzexdr"
+
+[functions.chat]
+verify_jwt = true
+
+[functions.create-avatar]
+verify_jwt = true
+
+[functions.generate-avatar-image]
+verify_jwt = true
+
+[functions.fetch-image-from-url]
+verify_jwt = true
+
+[functions.optimize-avatar]
+verify_jwt = true
+
+[functions.fetch-knowledge-from-url]
+verify_jwt = true
+
+[functions.verify-admin]
+verify_jwt = true
+
+[functions.detect-mood]
+verify_jwt = true
+
+[functions.update-personality]
+verify_jwt = true
+
+[functions.parse-document]
+verify_jwt = false
+
+[functions.process-referral]
+verify_jwt = true
+
+[functions.admin-update-avatar]
+verify_jwt = true
+
+[functions.admin-assign-role]
+verify_jwt = true
+
+[functions.admin-adjust-credits]
+verify_jwt = true
+
+[functions.summarize-conversation]
+verify_jwt = true
+
+[functions.request-credits]
+verify_jwt = true
+
+[functions.process-credit-request]
+verify_jwt = true
