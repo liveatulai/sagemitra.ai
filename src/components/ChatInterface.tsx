@@ -168,14 +168,17 @@ export default function ChatInterface() {
         .from("chat_messages")
         .select("*")
         .eq("session_id", sessionId)
-        .order("created_at");
+        .order("created_at", { ascending: true });
 
       console.log("Messages loaded:", msgs, msgsError);
 
-      if (msgs) setMessages(msgs.map(m => ({
-        ...m,
-        reactions: (m.reactions as any) || []
-      })) as Message[]);
+      if (msgs) {
+        setMessages(msgs.map(m => ({
+          ...m,
+          role: m.role as "user" | "assistant" | "gesture",
+          reactions: (m.reactions as any) || []
+        })) as Message[]);
+      }
       setLoading(false);
     } catch (error) {
       console.error("Unexpected error loading session:", error);
@@ -198,10 +201,22 @@ export default function ChatInterface() {
           filter: `session_id=eq.${sessionId}`,
         },
         (payload) => {
-          setMessages((prev) => [...prev, payload.new as Message]);
+          console.log("New message received via realtime:", payload.new);
+          const newMsg = payload.new as Message;
+          setMessages((prev) => {
+            // Avoid duplicates
+            if (prev.some(m => m.id === newMsg.id)) return prev;
+            return [...prev, {
+              ...newMsg,
+              role: newMsg.role as "user" | "assistant" | "gesture",
+              reactions: (newMsg.reactions as any) || []
+            }];
+          });
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log("Realtime subscription status:", status);
+      });
 
     return () => {
       supabase.removeChannel(channel);
