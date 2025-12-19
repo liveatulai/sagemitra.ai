@@ -52,74 +52,69 @@ serve(async (req) => {
     const validatedData = imageGenSchema.parse(body);
     const { prompt, avatarId } = validatedData;
     
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY not configured');
+    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+    if (!OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY not configured');
     }
 
-    // Enhanced prompt for photo-realistic portraits matching existing avatar style
-    const enhancedPrompt = `Create a hyper-realistic, photo-realistic portrait photograph of ${prompt}. 
+    // Enhanced prompt for photo-realistic portraits of the actual person/character
+    const enhancedPrompt = `A professional studio portrait photograph of ${prompt}. 
 
-CRITICAL REQUIREMENTS:
-- Ultra high resolution professional headshot photograph
-- Photo-realistic skin texture with natural pores, subtle imperfections, and realistic lighting on skin
-- Natural eye reflections and catchlights, detailed iris patterns
-- Realistic hair with individual strand details and natural highlights
-- Professional studio lighting: soft key light, subtle fill, and rim lighting for depth
-- Shallow depth of field with sharp focus on eyes and face
-- Neutral dark gradient background (dark gray to black)
-- Subject facing camera at slight 3/4 angle
-- Serious, contemplative, dignified expression
-- Natural skin tones and color grading similar to high-end magazine portraits
-- Style reference: Annie Leibovitz or Martin Schoeller portrait photography
-- Circular crop composition suitable for avatar/profile picture use
-- NO illustration, NO painting, NO cartoon, NO artistic stylization - ONLY photographic realism`;
+The image must accurately depict ${prompt} with their recognizable features and appearance.
+- High-end professional headshot photography style
+- Soft studio lighting with subtle rim light
+- Dark neutral gradient background
+- Sharp focus on the face, especially the eyes
+- Dignified, thoughtful expression
+- Photo-realistic quality matching editorial magazine portraits
+- Suitable for a circular avatar/profile picture
+- The person should be instantly recognizable as ${prompt}`;
 
-    console.log('Generating photo-realistic image with prompt:', enhancedPrompt);
+    console.log('Generating image with OpenAI gpt-image-1:', enhancedPrompt);
 
-    // Generate image using Lovable AI with the best image model
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    // Generate image using OpenAI's gpt-image-1 model
+    const response = await fetch('https://api.openai.com/v1/images/generations', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-3-pro-image-preview',
-        messages: [{
-          role: 'user',
-          content: enhancedPrompt
-        }],
-        modalities: ['image', 'text']
+        model: 'gpt-image-1',
+        prompt: enhancedPrompt,
+        n: 1,
+        size: '1024x1024',
+        quality: 'high',
+        response_format: 'b64_json'
       }),
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Image generation error:', errorText);
+      const errorData = await response.json().catch(() => ({}));
+      console.error('OpenAI image generation error:', response.status, errorData);
       
-      if (response.status === 402) {
-        throw new Error('Insufficient credits for image generation. Please add credits to your workspace in Settings → Workspace → Usage.');
+      if (response.status === 402 || response.status === 401) {
+        throw new Error('OpenAI API key issue. Please check your API key configuration.');
       }
       if (response.status === 429) {
         throw new Error('Rate limit exceeded. Please try again in a few moments.');
       }
       
-      throw new Error(`Image generation failed: ${response.status}`);
+      throw new Error(`Image generation failed: ${errorData?.error?.message || response.status}`);
     }
 
     const data = await response.json();
-    const base64Image = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    const base64Image = data.data?.[0]?.b64_json;
     
     if (!base64Image) {
+      console.error('No image in OpenAI response:', data);
       throw new Error('No image in response');
     }
 
-    // Extract base64 data
-    const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
-    const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+    // Convert base64 to buffer
+    const imageBuffer = Uint8Array.from(atob(base64Image), c => c.charCodeAt(0));
 
-    // Use authenticated userId for storage path (already have supabase client from auth)
+    // Use authenticated userId for storage path
     const fileName = `${avatarId || Date.now()}.png`;
     const filePath = `${userId}/${fileName}`;
 
@@ -139,6 +134,8 @@ CRITICAL REQUIREMENTS:
     const { data: { publicUrl } } = supabase.storage
       .from('avatar-images')
       .getPublicUrl(filePath);
+
+    console.log('Image generated and uploaded successfully:', publicUrl);
 
     return new Response(
       JSON.stringify({ imageUrl: publicUrl }),
