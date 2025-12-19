@@ -9,8 +9,8 @@ const corsHeaders = {
 const optimizeSchema = z.object({
   name: z.string().min(1).max(200),
   title: z.string().max(200).optional(),
-  description: z.string().max(2000).optional(),
-  personality_prompt: z.string().max(5000).optional(),
+  field: z.enum(['description', 'personality_prompt']),
+  current_value: z.string().max(50000).optional(),
   knowledge_base: z.string().max(50000).optional(),
 });
 
@@ -44,12 +44,12 @@ serve(async (req) => {
       );
     }
 
-    // Deduct 5 credits for avatar optimization
+    // Deduct 2 credits for single-field optimization (was 5 for full optimization)
     const { data: creditResult, error: creditError } = await supabase
       .rpc('adjust_user_credits', {
         p_user_id: user.id,
-        p_amount: -5,
-        p_description: 'Avatar optimization'
+        p_amount: -2,
+        p_description: 'Avatar field optimization'
       });
 
     if (creditError || !creditResult?.success) {
@@ -65,10 +65,9 @@ serve(async (req) => {
 
     const body = await req.json();
     const validatedData = optimizeSchema.parse(body);
-    const { name, title, description, personality_prompt, knowledge_base } = validatedData;
+    const { name, title, field, current_value, knowledge_base } = validatedData;
 
-    // Personality prompt can be empty - AI will help generate it
-    const promptToOptimize = personality_prompt?.trim() || "Not specified - please suggest a personality prompt for this avatar.";
+    const valueToOptimize = current_value?.trim() || "";
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
@@ -266,57 +265,57 @@ serve(async (req) => {
       throw lastError;
     }
 
-    const optimizationPrompt = `You are an expert avatar creator for a wisdom-sharing platform called SageMitra. Optimize this avatar profile to make it compelling, clear, and effective for AI conversations.
+    // Build field-specific optimization prompt
+    let optimizationPrompt: string;
+    
+    if (field === 'description') {
+      optimizationPrompt = `You are an expert avatar creator for SageMitra, a wisdom-sharing platform. Optimize this avatar's DESCRIPTION.
 
-CURRENT AVATAR:
+AVATAR INFO:
 Name: ${name}
 Title: ${title || "Not specified"}
-Description: ${description || "Not specified"}
+Current Description: ${valueToOptimize || "Not specified"}
+Knowledge Base Context: ${knowledge_base?.slice(0, 500) || "Not specified"}
 
-Personality Prompt (System Prompt):
-${promptToOptimize}
-
-Knowledge Base:
-${knowledge_base || "Not specified"}
-
-OPTIMIZATION TASKS:
-
-1. DESCRIPTION (2-3 compelling sentences):
-   - Make it clear and engaging
-   - Highlight the avatar's unique value
-   - Use vivid, memorable language
-   - Keep it concise but impactful
-
-2. PERSONALITY PROMPT (System Prompt):
-   - Structure it with clear sections:
-     * Voice Style: How this avatar speaks
-     * Core Philosophy: Key principles
-     * Response Guidelines: How to answer questions
-     * Boundaries: What not to do
-   - Make it specific and actionable
-   - Ensure consistency with the avatar's identity
-   - Use clear instructions for AI behavior
-
-3. KNOWLEDGE BASE:
-   - Fill knowledge gaps with relevant context
-   - Add historical background if applicable
-   - Include key concepts, quotes, or teachings
-   - Provide specific examples or stories
-   - Maintain authenticity to the avatar's identity
-
-IMPORTANT:
+OPTIMIZATION TASK - Create a compelling 2-3 sentence description:
+- Make it clear and engaging
+- Highlight the avatar's unique value
+- Use vivid, memorable language
+- Keep it concise but impactful
 - Preserve the core identity and authenticity
-- Don't fabricate facts or quotes
-- Make improvements practical and clear
-- Keep the avatar's original voice and style
 
-Return ONLY a valid JSON object (no markdown, no explanation) with this structure:
+Return ONLY a valid JSON object (no markdown, no explanation):
 {
-  "optimized_description": "The improved 2-3 sentence description",
-  "optimized_personality_prompt": "The improved system prompt",
-  "optimized_knowledge_base": "The improved knowledge base",
-  "improvements_made": ["List", "of", "key", "improvements"]
+  "optimized_value": "The improved 2-3 sentence description"
 }`;
+    } else {
+      optimizationPrompt = `You are an expert avatar creator for SageMitra, a wisdom-sharing platform. Optimize this avatar's PERSONALITY PROMPT (system prompt).
+
+AVATAR INFO:
+Name: ${name}
+Title: ${title || "Not specified"}
+Current Personality Prompt: ${valueToOptimize || "Not specified - please suggest one"}
+Knowledge Base Context: ${knowledge_base?.slice(0, 1000) || "Not specified"}
+
+OPTIMIZATION TASK - Create an effective system prompt with clear sections:
+* Voice Style: How this avatar speaks
+* Core Philosophy: Key principles
+* Response Guidelines: How to answer questions
+* Boundaries: What not to do
+
+Requirements:
+- Make it specific and actionable
+- Ensure consistency with the avatar's identity
+- Use clear instructions for AI behavior
+- Preserve the core identity and authenticity
+
+Return ONLY a valid JSON object (no markdown, no explanation):
+{
+  "optimized_value": "The improved system prompt"
+}`;
+    }
+
+    console.log(`Optimizing ${field} for avatar: ${name}`);
 
     // Three-tier fallback system
     let content: string | undefined;

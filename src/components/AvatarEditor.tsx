@@ -11,7 +11,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Label } from "@/components/ui/label";
-import OptimizePreviewModal from "./OptimizePreviewModal";
 import SafeComponent from "./SafeComponent";
 import VoiceUploader from "./VoiceUploader";
 import { z } from "zod";
@@ -59,11 +58,11 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
   const [imagePrompt, setImagePrompt] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [previewUrl, setPreviewUrl] = useState(avatar.image_url || "");
-  const [optimizedData, setOptimizedData] = useState<any>(null);
-  const [showOptimizeModal, setShowOptimizeModal] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(true);
+  const [optimizingDescription, setOptimizingDescription] = useState(false);
+  const [optimizingPersonality, setOptimizingPersonality] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -190,16 +189,13 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     }
   };
 
-  const optimizeWithAI = async () => {
-    if (!isMounted) {
-      console.log('Component not mounted, aborting optimize');
-      return;
-    }
+  const optimizeField = async (field: 'description' | 'personality_prompt') => {
+    if (!isMounted) return;
 
+    const setLoading = field === 'description' ? setOptimizingDescription : setOptimizingPersonality;
     setLoading(true);
     
     try {
-      // Get user session token for authentication
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         toast.error("Please log in again to use AI optimization");
@@ -207,7 +203,6 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
         return;
       }
 
-      // Use fetch directly to get proper error responses
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/optimize-avatar`,
         {
@@ -219,45 +214,34 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
           body: JSON.stringify({
             name: editedAvatar.name,
             title: editedAvatar.title,
-            description: editedAvatar.description || "",
-            personality_prompt: editedAvatar.personality_prompt,
+            field: field,
+            current_value: field === 'description' 
+              ? (editedAvatar.description || "") 
+              : editedAvatar.personality_prompt,
             knowledge_base: editedAvatar.knowledge_base || ""
           })
         }
       );
 
       if (!isMounted) {
-        console.log('Component unmounted during request');
         setLoading(false);
         return;
       }
 
       const data = await response.json();
-      console.log('Optimize response:', { status: response.status, data, isMounted });
 
-      // Handle non-2xx responses
       if (!response.ok) {
-        console.error('Optimization error:', { status: response.status, data });
-        
-        const errorMessage = data?.error || "Failed to optimize avatar";
+        const errorMessage = data?.error || "Failed to optimize";
         const errorCode = data?.code;
         const retryAfter = data?.retryAfter;
         
-        // Handle specific error codes
         if (errorCode === 'E005' || response.status === 402 || errorMessage.includes('Insufficient credits')) {
-          toast.error("Insufficient credits for AI optimization. Please add credits to your workspace in Settings → Workspace → Usage.");
-        } else if (errorCode === 'RATE_LIMIT_EXCEEDED' || errorCode === 'E004' || response.status === 429) {
-          // Show countdown timer for rate limit errors
-          if (retryAfter && typeof retryAfter === 'number') {
-            const retryMessage = retryAfter > 60 
-              ? `Rate limit exceeded. Please wait ${Math.ceil(retryAfter / 60)} minute(s) and try again.`
-              : `Rate limit exceeded. Please wait ${retryAfter} seconds and try again.`;
-            toast.error(retryMessage, { duration: 6000 });
-          } else {
-            toast.error("Rate limit exceeded. Your Gemini API free tier is exhausted. Please wait a few minutes and try again.");
-          }
-        } else if (errorCode === 'QUOTA_EXCEEDED') {
-          toast.error("Your Gemini API quota is exhausted. Please upgrade your plan at https://ai.google.dev/pricing", { duration: 8000 });
+          toast.error("Insufficient credits for AI optimization.");
+        } else if (errorCode === 'RATE_LIMIT_EXCEEDED' || response.status === 429) {
+          const retryMessage = retryAfter && retryAfter > 60 
+            ? `Rate limit exceeded. Please wait ${Math.ceil(retryAfter / 60)} minute(s).`
+            : `Rate limit exceeded. Please wait ${retryAfter || 60} seconds.`;
+          toast.error(retryMessage, { duration: 6000 });
         } else {
           toast.error(errorMessage);
         }
@@ -265,45 +249,28 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
         return;
       }
 
-      // Validate the response has the expected structure
-      if (!data || typeof data !== 'object') {
-        console.error('Invalid optimization response - not an object:', data);
+      if (!data || !data.optimized_value) {
         toast.error("Received invalid response from AI. Please try again.");
         setLoading(false);
         return;
       }
 
-      if (!data.optimized_description || !data.optimized_personality_prompt) {
-        console.error('Invalid optimization response - missing required fields:', data);
-        toast.error("Received incomplete response from AI. Please try again.");
-        setLoading(false);
-        return;
+      // Apply the optimization directly
+      if (field === 'description') {
+        setEditedAvatar({ ...editedAvatar, description: data.optimized_value, is_optimized: true });
+        toast.success("Description optimized!");
+      } else {
+        setEditedAvatar({ ...editedAvatar, personality_prompt: data.optimized_value, is_optimized: true });
+        toast.success("Personality prompt optimized!");
       }
-
-      console.log('Setting optimized data and opening modal');
-      setOptimizedData(data);
-      setShowOptimizeModal(true);
       setLoading(false);
     } catch (error: any) {
-      console.error('Caught exception in optimizeWithAI:', error);
-      if (!isMounted) {
-        console.log('Component unmounted during error handling');
-        return;
+      console.error(`Error optimizing ${field}:`, error);
+      if (isMounted) {
+        toast.error(error?.message || "An unexpected error occurred.");
+        setLoading(false);
       }
-      
-      const errorMessage = error?.message || "An unexpected error occurred. Please try again.";
-      toast.error(errorMessage);
-      setLoading(false);
     }
-  };
-
-  const applyOptimizations = (selected: any) => {
-    setEditedAvatar({
-      ...editedAvatar,
-      ...selected,
-      is_optimized: true
-    });
-    toast.success("Optimizations applied!");
   };
 
   const saveChanges = async () => {
@@ -534,7 +501,19 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="description" className="text-sm font-medium">Description</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="description" className="text-sm font-medium">Description</Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => optimizeField('description')}
+                    disabled={optimizingDescription || !editedAvatar.name}
+                    className="h-7 text-xs gap-1"
+                  >
+                    {optimizingDescription ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                    Optimize
+                  </Button>
+                </div>
                 <Textarea
                   id="description"
                   value={editedAvatar.description || ""}
@@ -553,7 +532,19 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
               <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Personality Configuration</h3>
               
               <div className="space-y-2">
-                <Label htmlFor="personality" className="text-sm font-medium">Personality Prompt (System Prompt) *</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="personality" className="text-sm font-medium">Personality Prompt (System Prompt) *</Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => optimizeField('personality_prompt')}
+                    disabled={optimizingPersonality || !editedAvatar.name}
+                    className="h-7 text-xs gap-1"
+                  >
+                    {optimizingPersonality ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                    Optimize
+                  </Button>
+                </div>
                 <Textarea
                   id="personality"
                   value={editedAvatar.personality_prompt}
@@ -710,20 +701,6 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
               </Collapsible>
             </div>
 
-            <Separator />
-
-            {/* AI Optimization */}
-            <Button 
-              onClick={optimizeWithAI} 
-              disabled={loading} 
-              variant="secondary" 
-              className="w-full"
-              size="lg"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Sparkles className="w-4 h-4 mr-2" />}
-              Optimize with AI
-            </Button>
-
             {/* Voice Upload Section */}
             {editedAvatar && (
               <VoiceUploader
@@ -751,21 +728,6 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
           </div>
         </div>
       </DialogContent>
-
-      {/* Optimize Preview Modal */}
-      {optimizedData && (
-        <OptimizePreviewModal
-          open={showOptimizeModal}
-          onOpenChange={setShowOptimizeModal}
-          original={{
-            description: editedAvatar.description || "",
-            personality_prompt: editedAvatar.personality_prompt,
-            knowledge_base: editedAvatar.knowledge_base || ""
-          }}
-          optimized={optimizedData}
-          onApply={applyOptimizations}
-        />
-      )}
     </Dialog>
     </SafeComponent>
   );
