@@ -86,6 +86,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
   const [imageCache, setImageCache] = useState<Record<string, { images: { url: string; source: string; trusted: boolean }[]; hasMore: boolean; offset: number }>>({});
   const [customSearchQuery, setCustomSearchQuery] = useState("");
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
+  const [pasteImageUrl, setPasteImageUrl] = useState("");
 
   useEffect(() => {
     setIsMounted(true);
@@ -383,6 +384,20 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     // Clear cache for this query and search
     setImageCache({});
     searchReferenceImages(false, false, imageSourceFilter, customSearchQuery.trim());
+  };
+
+  const usePastedUrl = () => {
+    if (!pasteImageUrl.trim()) {
+      toast.error("Please paste an image URL");
+      return;
+    }
+    try {
+      new URL(pasteImageUrl);
+      selectReferenceImage(pasteImageUrl.trim());
+      setPasteImageUrl("");
+    } catch {
+      toast.error("Invalid URL format");
+    }
   };
 
   const selectReferenceImage = (url: string) => {
@@ -765,22 +780,42 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                       
                       {/* Custom Search Input */}
                       {!selectedReferenceUrl && (
-                        <div className="flex gap-2 mb-3">
-                          <Input
-                            placeholder="Search images..."
-                            value={customSearchQuery}
-                            onChange={(e) => setCustomSearchQuery(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleCustomSearch()}
-                            className="h-8 text-xs"
-                          />
-                          <Button
-                            size="sm"
-                            className="h-8 px-3"
-                            onClick={handleCustomSearch}
-                            disabled={searchingImages || !customSearchQuery.trim()}
-                          >
-                            {searchingImages ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
-                          </Button>
+                        <div className="space-y-2 mb-3">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Search images..."
+                              value={customSearchQuery}
+                              onChange={(e) => setCustomSearchQuery(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleCustomSearch()}
+                              className="h-8 text-xs"
+                            />
+                            <Button
+                              size="sm"
+                              className="h-8 px-3"
+                              onClick={handleCustomSearch}
+                              disabled={searchingImages || !customSearchQuery.trim()}
+                            >
+                              {searchingImages ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+                            </Button>
+                          </div>
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Or paste image URL directly..."
+                              value={pasteImageUrl}
+                              onChange={(e) => setPasteImageUrl(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && usePastedUrl()}
+                              className="h-8 text-xs"
+                            />
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="h-8 px-3"
+                              onClick={usePastedUrl}
+                              disabled={!pasteImageUrl.trim()}
+                            >
+                              <LinkIcon className="w-3 h-3" />
+                            </Button>
+                          </div>
                         </div>
                       )}
                       

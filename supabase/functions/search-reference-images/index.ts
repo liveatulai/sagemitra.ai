@@ -69,10 +69,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         query: searchQuery,
-        limit: Math.min(limit + offset + 10, 30), // Fetch more to filter
-        scrapeOptions: {
-          formats: ['links']
-        }
+        limit: Math.min(limit + 5, 20), // Reduced for faster response
       }),
     });
 
