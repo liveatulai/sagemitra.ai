@@ -224,7 +224,7 @@ export default function ChatMessage({
                   </ReactionPicker>
                   {message.role === "assistant" && (
                     <>
-                      <TTSButton text={message.content} />
+                      <TTSButton text={message.content} avatarName={avatarName} />
                       {onRegenerate && (
                         <Button
                           size="sm"
