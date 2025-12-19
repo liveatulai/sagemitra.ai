@@ -13,6 +13,7 @@ import AvatarEditor from "./AvatarEditor";
 import AvatarFilters from "./AvatarFilters";
 import TagCloud from "./TagCloud";
 import CreditsBalance from "./CreditsBalance";
+import { LogoMark } from "@/components/LogoMark";
 import einsteinImg from "@/assets/avatars/einstein.jpg";
 import ramanaImg from "@/assets/avatars/ramana.jpg";
 import buddhaImg from "@/assets/avatars/buddha.jpg";
@@ -27,7 +28,6 @@ import muskImg from "@/assets/avatars/musk.jpg";
 import jobsImg from "@/assets/avatars/jobs.jpg";
 import zuckerbergImg from "@/assets/avatars/zuckerberg.jpg";
 import krishnamurtiImg from "@/assets/avatars/krishnamurti.jpg";
-import logo from "@/assets/logo.png";
 
 interface Avatar {
   id: string;
@@ -330,7 +330,7 @@ export default function AvatarGrid() {
           <div className="flex items-center justify-between h-14 sm:h-16">
             {/* Logo */}
             <div className="flex items-center gap-2 flex-1 min-w-0">
-              <img src={logo} alt="SageMitra" className="h-10 w-10 sm:h-12 sm:w-12" />
+              <LogoMark className="h-10 w-10 sm:h-12 sm:w-12" />
               <div>
                 <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
                   SageMitra
