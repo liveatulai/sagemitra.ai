@@ -57,34 +57,35 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    // Prompt matching existing avatar style (Einstein, Musk, Aphrodite) - head/shoulders that fit in circle
-    const enhancedPrompt = `Professional portrait photograph of ${prompt}.
+    // Prompt matching existing avatar style - emphasize real person accuracy
+    const enhancedPrompt = `Generate a photorealistic portrait of the REAL historical figure "${prompt}".
 
-COMPOSITION (CRITICAL):
-- Head, neck, and upper shoulders visible - NOT extreme close-up
-- Subject centered, with space around the head for circular cropping
-- Face takes up about 60% of frame height, leaving room for hair and shoulders
-- Perfectly suited for a circular avatar crop
+CRITICAL - ACCURACY REQUIREMENTS:
+- This MUST be ${prompt} - the actual real person, not a generic representation
+- Study and replicate their EXACT facial features, bone structure, and distinctive characteristics
+- If ${prompt} is a known historical/public figure, match their documented appearance precisely
+- Include their characteristic attire, accessories, or styling they are known for
 
-SUBJECT ACCURACY:
-- Must be an accurate, recognizable depiction of ${prompt}
-- Show their distinctive features, hairstyle, and appearance
-- Historically/culturally accurate clothing and styling if applicable
+COMPOSITION:
+- Head, neck, and upper shoulders visible
+- Subject centered with adequate space for circular avatar cropping
+- Face occupies approximately 60% of frame height
+- Square aspect ratio, suitable for profile picture use
 
-VISUAL STYLE (match existing avatars):
-- Cinematic color grading with warm, slightly golden undertones
-- Soft vignette effect around edges
-- Professional studio lighting: soft key light, subtle fill
-- Rich, deep shadows with smooth gradients
-- Slightly desaturated, timeless look
-- Dark moody background (deep charcoal/black gradient)
-- Sharp focus on face, gentle blur on shoulders
-- High-end editorial magazine quality
-- Thoughtful, dignified expression
+VISUAL STYLE (consistent with existing avatars):
+- Warm cinematic color grading with golden undertones
+- Soft vignette effect
+- Professional studio lighting: diffused key light from front-left, subtle fill
+- Rich shadows with smooth gradients
+- Slightly desaturated, timeless aesthetic
+- Dark gradient background (charcoal to black)
+- Sharp focus on face, soft blur on shoulders/background
+- Dignified, contemplative expression
+- Editorial magazine portrait quality
 
-OUTPUT: Photorealistic portrait only. No text, borders, or watermarks. Square format.`;
+OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
 
-    console.log('Generating avatar portrait with Nano Banana Pro:', prompt);
+    console.log('Generating accurate portrait of:', prompt);
 
     // Generate image using Lovable AI with Nano Banana Pro model
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
