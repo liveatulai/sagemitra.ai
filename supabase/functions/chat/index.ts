@@ -12,6 +12,7 @@ const chatRequestSchema = z.object({
   sessionId: z.string().uuid(),
   message: z.string().min(1).max(10000),
   avatarId: z.string().uuid(),
+  isWelcome: z.boolean().optional().default(false),
 });
 
 serve(async (req) => {
@@ -22,7 +23,7 @@ serve(async (req) => {
   try {
     const body = await req.json();
     const validatedData = chatRequestSchema.parse(body);
-    const { sessionId, message, avatarId } = validatedData;
+    const { sessionId, message, avatarId, isWelcome } = validatedData;
 
     if (!sessionId || !message || !avatarId) {
       return new Response(
@@ -63,23 +64,25 @@ serve(async (req) => {
       );
     }
 
-    // Deduct 1 credit for chat message
-    const { data: creditResult, error: creditError } = await supabase
-      .rpc('adjust_user_credits', {
-        p_user_id: user.id,
-        p_amount: -1,
-        p_description: 'Chat message'
-      });
+    // Deduct 1 credit for chat message (skip for welcome messages)
+    if (!isWelcome) {
+      const { data: creditResult, error: creditError } = await supabase
+        .rpc('adjust_user_credits', {
+          p_user_id: user.id,
+          p_amount: -1,
+          p_description: 'Chat message'
+        });
 
-    if (creditError || !creditResult?.success) {
-      console.error('Credit deduction failed:', creditError || creditResult?.error);
-      return new Response(
-        JSON.stringify({ 
-          error: creditResult?.error || 'Insufficient credits',
-          code: 'INSUFFICIENT_CREDITS'
-        }),
-        { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      if (creditError || !creditResult?.success) {
+        console.error('Credit deduction failed:', creditError || creditResult?.error);
+        return new Response(
+          JSON.stringify({ 
+            error: creditResult?.error || 'Insufficient credits',
+            code: 'INSUFFICIENT_CREDITS'
+          }),
+          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     // Robust avatar lookup: (a) user_avatars, (b) avatars
@@ -204,16 +207,25 @@ BONDING STYLE: ${profile.bonding_style}`;
       { role: "system", content: systemPrompt }
     ];
 
-    // Add conversation history
-    for (const msg of recentHistory) {
-      messages.push({
-        role: msg.role === 'user' ? 'user' : 'assistant',
-        content: msg.content
-      });
+    // Add conversation history (skip for welcome messages since there's no history)
+    if (!isWelcome) {
+      for (const msg of recentHistory) {
+        messages.push({
+          role: msg.role === 'user' ? 'user' : 'assistant',
+          content: msg.content
+        });
+      }
     }
 
-    // Add current message
-    messages.push({ role: "user", content: message });
+    // Add current message - for welcome, use a special greeting prompt
+    if (isWelcome) {
+      messages.push({ 
+        role: "user", 
+        content: `Generate a brief, warm welcoming message (max 50 words) to greet someone who just started a conversation with you. Be warm, inviting, and stay in character. Do not ask them to tell you about themselves - instead offer your wisdom or ask what brings them to you.`
+      });
+    } else {
+      messages.push({ role: "user", content: message });
+    }
 
     // Call Lovable AI API (OpenAI-compatible endpoint)
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -281,11 +293,15 @@ BONDING STYLE: ${profile.bonding_style}`;
       content: assistantMessage,
     });
 
-    // Generate follow-up suggestions
+    // Generate follow-up suggestions (also for welcome messages to help user get started)
+    const suggestionsContext = isWelcome 
+      ? `This is a welcome message from ${avatar.name}. Suggest 3 conversation starters.`
+      : `User: ${message}`;
+    
     const suggestionsPrompt = `Based on this conversation, suggest 3 brief follow-up questions (max 8 words each) the user might ask. Return ONLY a JSON array of strings, nothing else.
 
 Recent context:
-User: ${message}
+${suggestionsContext}
 Assistant: ${assistantMessage}`;
 
     try {

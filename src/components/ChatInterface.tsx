@@ -229,7 +229,7 @@ export default function ChatInterface() {
   };
 
   const sendWelcomeMessage = async () => {
-    if (!sessionId) return;
+    if (!sessionId || !avatar) return;
     
     // Check if there are already messages
     const { data: existingMessages } = await supabase
@@ -240,42 +240,42 @@ export default function ChatInterface() {
 
     if (existingMessages && existingMessages.length > 0) return;
 
-    // Send a welcome message from the avatar
-    if (avatar) {
-      const welcomePrompt = `Generate a brief welcoming message (max 50 words) that ${avatar.name} would say to greet a new conversation. Stay in character and be warm and inviting.`;
-      
-      try {
-        // Get user session token
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          console.error("No active session");
-          return;
-        }
+    console.log("Sending welcome message for avatar:", avatar.name);
 
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({
-              sessionId,
-              message: welcomePrompt,
-              avatarId: avatar.id,
-            })
-          }
-        );
-        
-        const data = await response.json();
-        
-        if (response.ok && data?.success) {
-          console.log("Welcome message sent");
-        }
-      } catch (error) {
-        console.error("Failed to send welcome message:", error);
+    try {
+      // Get user session token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.error("No active session");
+        return;
       }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            sessionId,
+            message: `[WELCOME] Generate a brief, warm welcoming message (max 50 words) to greet someone starting a new conversation with you.`,
+            avatarId: avatar.id,
+            isWelcome: true, // Flag to indicate this is a welcome message
+          })
+        }
+      );
+      
+      const data = await response.json();
+      
+      if (response.ok && data?.success) {
+        console.log("Welcome message sent successfully");
+      } else {
+        console.error("Welcome message failed:", data);
+      }
+    } catch (error) {
+      console.error("Failed to send welcome message:", error);
     }
   };
 
