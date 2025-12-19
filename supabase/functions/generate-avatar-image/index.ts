@@ -51,9 +51,9 @@ serve(async (req) => {
     const validatedData = imageGenSchema.parse(body);
     const { prompt, avatarId, referenceImageUrl } = validatedData;
     
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY not configured');
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+    if (!GEMINI_API_KEY) {
+      throw new Error('GEMINI_API_KEY not configured');
     }
 
     let imagePrompt: string;
@@ -135,58 +135,53 @@ VISUAL STYLE:
 OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
     }
 
-    console.log('Calling Lovable AI with Nano banana model');
+    console.log('Calling Gemini API with gemini-2.0-flash-exp for image generation');
 
-    // Build request body for Lovable AI gateway
-    const messages: any[] = [];
-    
-    if (base64ImageData) {
-      // With reference image
-      messages.push({
-        role: "user",
-        content: [
-          { type: "text", text: imagePrompt },
-          { 
-            type: "image_url", 
-            image_url: { 
-              url: `data:image/jpeg;base64,${base64ImageData}` 
-            } 
-          }
-        ]
-      });
-    } else {
-      // Text only
-      messages.push({
-        role: "user",
-        content: imagePrompt
-      });
-    }
-    
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-image-preview',
-        messages,
-        modalities: ['image', 'text'],
-      }),
-    });
+    // Build request body for Gemini generateContent with image output
+    const requestBody: any = {
+      contents: [{
+        parts: base64ImageData 
+          ? [
+              { text: imagePrompt },
+              { inlineData: { mimeType: "image/jpeg", data: base64ImageData } }
+            ]
+          : [{ text: imagePrompt }]
+      }],
+      generationConfig: {
+        responseModalities: ["IMAGE", "TEXT"]
+      }
+    };
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      }
+    );
 
     if (!response.ok) {
       const raw = await response.text();
-      console.error("Lovable AI error:", response.status, raw);
+      console.error("Gemini API error:", response.status, raw);
 
       let friendly = `Image generation failed (${response.status}).`;
       
       if (response.status === 429) {
-        friendly = "Rate limit reached. Please try again in a moment.";
-      } else if (response.status === 402) {
-        friendly = "Lovable AI credits exhausted. Please add credits to your workspace.";
+        friendly = "Gemini rate limit reached. Please try again in a moment.";
+      } else if (response.status === 403) {
+        friendly = "Gemini API access denied. Check your API key permissions.";
       } else if (response.status === 401) {
-        friendly = "API key is invalid or unauthorized.";
+        friendly = "Gemini API key is invalid or unauthorized.";
+      } else if (response.status === 400) {
+        // Parse error message for more details
+        try {
+          const parsed = JSON.parse(raw);
+          const msg = parsed?.error?.message;
+          if (msg) {
+            friendly = `Gemini error: ${msg}`;
+          }
+        } catch {}
       }
 
       return new Response(
@@ -196,26 +191,22 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
     }
 
     const data = await response.json();
-    console.log('Lovable AI response received');
+    console.log('Gemini response received');
 
-    // Extract image from response - Nano banana returns images in the message
-    const images = data.choices?.[0]?.message?.images;
+    // Extract image from response
+    const parts = data.candidates?.[0]?.content?.parts || [];
     let generatedImageData: string | undefined;
 
-    if (images && images.length > 0) {
-      const imageUrl = images[0]?.image_url?.url;
-      if (imageUrl && imageUrl.startsWith('data:image')) {
-        // Extract base64 from data URL
-        const base64Match = imageUrl.match(/^data:image\/[^;]+;base64,(.+)$/);
-        if (base64Match) {
-          generatedImageData = base64Match[1];
-        }
+    for (const part of parts) {
+      if (part.inlineData?.mimeType?.startsWith('image/')) {
+        generatedImageData = part.inlineData.data;
+        break;
       }
     }
 
     if (!generatedImageData) {
-      console.error('No image in response:', JSON.stringify(data).substring(0, 500));
-      throw new Error('No image in response');
+      console.error('No image in Gemini response:', JSON.stringify(data).substring(0, 500));
+      throw new Error('No image generated. The model may not support image generation with this prompt.');
     }
 
     // Convert base64 to buffer
