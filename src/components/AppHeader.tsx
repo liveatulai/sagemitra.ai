@@ -5,6 +5,7 @@ import { Button } from "./ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import logo from "@/assets/logo.png";
 
 export default function AppHeader() {
   const location = useLocation();
@@ -44,6 +45,7 @@ export default function AppHeader() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
+            <img src={logo} alt="SageMitra" className="h-9 w-9" />
             <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
               SageMitra
             </h1>
