@@ -55,7 +55,7 @@ interface AvatarEditorProps {
 
 export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: AvatarEditorProps) {
   const [editedAvatar, setEditedAvatar] = useState(avatar);
-  const [imagePrompt, setImagePrompt] = useState("");
+  const [imagePrompt, setImagePrompt] = useState(avatar.name || "");
   const [imageUrl, setImageUrl] = useState("");
   const [previewUrl, setPreviewUrl] = useState(avatar.image_url || "");
   const [imageOpen, setImageOpen] = useState(false);
