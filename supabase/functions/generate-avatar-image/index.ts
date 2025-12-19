@@ -52,14 +52,13 @@ serve(async (req) => {
     const validatedData = imageGenSchema.parse(body);
     const { prompt, avatarId, referenceImageUrl } = validatedData;
     
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY not configured');
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+    if (!GEMINI_API_KEY) {
+      throw new Error('GEMINI_API_KEY not configured');
     }
 
-    let messageContent: any;
     let processedReferenceUrl = referenceImageUrl;
-    let base64Image: string | undefined;
+    let base64ImageData: string | undefined;
 
     // Validate reference image format - Gemini only supports jpg, jpeg, png, webp
     if (referenceImageUrl) {
@@ -96,12 +95,8 @@ serve(async (req) => {
             for (let i = 0; i < uint8Array.length; i++) {
               binary += String.fromCharCode(uint8Array[i]);
             }
-            base64Image = btoa(binary);
-            
-            // Create data URL
-            const mimeType = contentType.split(';')[0];
-            processedReferenceUrl = `data:${mimeType};base64,${base64Image}`;
-            console.log('Successfully converted image to base64, size:', base64Image.length);
+            base64ImageData = btoa(binary);
+            console.log('Successfully converted image to base64, size:', base64ImageData.length);
           } else {
             console.log('Failed to download reference image:', imageResponse.status, '- falling back to text-only');
             processedReferenceUrl = undefined;
@@ -114,11 +109,14 @@ serve(async (req) => {
       }
     }
 
-    if (processedReferenceUrl) {
+    let imagePrompt: string;
+    let requestBody: any;
+
+    if (processedReferenceUrl && base64ImageData) {
       // With reference image - use image editing/transformation
       console.log('Generating avatar from reference image (base64)');
       
-      const enhancedPrompt = `Transform this reference image into a professional avatar portrait for "${prompt}".
+      imagePrompt = `Transform this reference image into a professional avatar portrait for "${prompt}".
 
 IMPORTANT: Use the person's face from the reference image as the basis.
 
@@ -136,15 +134,27 @@ APPLY THIS STYLE:
 
 OUTPUT: Single styled portrait matching the avatar aesthetic. No text or borders.`;
 
-      messageContent = [
-        { type: "text", text: enhancedPrompt },
-        { type: "image_url", image_url: { url: processedReferenceUrl } }
-      ];
+      requestBody = {
+        contents: [{
+          parts: [
+            { text: imagePrompt },
+            { 
+              inlineData: { 
+                mimeType: "image/jpeg", 
+                data: base64ImageData 
+              } 
+            }
+          ]
+        }],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+        }
+      };
     } else {
       // Without reference - generate from scratch
       console.log('Generating avatar from text prompt:', prompt);
       
-      const enhancedPrompt = `Generate a photorealistic portrait of the REAL historical figure "${prompt}".
+      imagePrompt = `Generate a photorealistic portrait of the REAL historical figure "${prompt}".
 
 CRITICAL - ACCURACY REQUIREMENTS:
 - This MUST be ${prompt} - the actual real person, not a generic representation
@@ -171,33 +181,27 @@ VISUAL STYLE (consistent with existing avatars):
 
 OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
 
-      messageContent = enhancedPrompt;
+      requestBody = {
+        contents: [{
+          parts: [{ text: imagePrompt }]
+        }],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+        }
+      };
     }
 
-    // Generate image using Lovable AI
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    // Generate image using Gemini API directly with imagen model
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${GEMINI_API_KEY}`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-3-pro-image-preview',
-        messages: [{
-          role: 'user',
-          content: messageContent
-        }],
-        modalities: ['image', 'text']
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Lovable AI image generation error:', response.status, errorText);
+      console.error('Gemini image generation error:', response.status, errorText);
       
-      if (response.status === 402) {
-        throw new Error('Insufficient credits for image generation. Please add credits to your workspace in Settings → Workspace → Usage.');
-      }
       if (response.status === 429) {
         throw new Error('Rate limit exceeded. Please try again in a few moments.');
       }
@@ -206,16 +210,25 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
     }
 
     const data = await response.json();
-    const generatedImageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
     
-    if (!generatedImageUrl) {
-      console.error('No image in Lovable AI response:', JSON.stringify(data).substring(0, 500));
+    // Extract image from Gemini response
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    let generatedImageData: string | undefined;
+    
+    for (const part of parts) {
+      if (part.inlineData?.mimeType?.startsWith('image/')) {
+        generatedImageData = part.inlineData.data;
+        break;
+      }
+    }
+    
+    if (!generatedImageData) {
+      console.error('No image in Gemini response:', JSON.stringify(data).substring(0, 500));
       throw new Error('No image in response');
     }
 
-    // Extract base64 data
-    const base64Data = generatedImageUrl.replace(/^data:image\/\w+;base64,/, '');
-    const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+    // Convert base64 to buffer
+    const imageBuffer = Uint8Array.from(atob(generatedImageData), c => c.charCodeAt(0));
 
     // Upload to storage
     const fileName = `${avatarId || Date.now()}.png`;

@@ -15,6 +15,32 @@ const chatRequestSchema = z.object({
   isWelcome: z.boolean().optional().default(false),
 });
 
+// Helper function to call Gemini API directly
+async function callGeminiAPI(systemPrompt: string, messages: Array<{role: string, content: string}>, apiKey: string) {
+  // Convert messages to Gemini format
+  const contents = messages
+    .filter(m => m.role !== 'system')
+    .map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }]
+    }));
+
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: contents,
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 2000,
+      },
+    }),
+  });
+
+  return response;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -32,10 +58,10 @@ serve(async (req) => {
       );
     }
 
-    // Use Lovable AI API key
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      console.error('LOVABLE_API_KEY not configured');
+    // Use Gemini API key directly
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) {
+      console.error('GEMINI_API_KEY not configured');
       return new Response(
         JSON.stringify({ error: 'SERVICE_UNAVAILABLE', code: 'E001' }),
         { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -203,9 +229,7 @@ BONDING STYLE: ${profile.bonding_style}`;
     systemPrompt += `\n\nYou are ${avatar.name}. Stay in character and provide thoughtful, wise responses that reflect your personality and teachings.`;
 
     // Format conversation history for the AI
-    const messages = [
-      { role: "system", content: systemPrompt }
-    ];
+    const messages = [];
 
     // Add conversation history (skip for welcome messages since there's no history)
     if (!isWelcome) {
@@ -227,20 +251,8 @@ BONDING STYLE: ${profile.bonding_style}`;
       messages.push({ role: "user", content: message });
     }
 
-    // Call Lovable AI API (OpenAI-compatible endpoint)
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: messages,
-        temperature: 0.7,
-        max_tokens: 2000,
-      }),
-    });
+    // Call Gemini API directly
+    const aiResponse = await callGeminiAPI(systemPrompt, messages, GEMINI_API_KEY);
 
     if (!aiResponse.ok) {
       let errorText = "";
@@ -250,7 +262,7 @@ BONDING STYLE: ${profile.bonding_style}`;
         errorText = "Unknown error";
       }
       
-      console.error("Lovable AI API error:", aiResponse.status, errorText);
+      console.error("Gemini API error:", aiResponse.status, errorText);
       
       if (aiResponse.status === 429) {
         return new Response(
@@ -273,7 +285,7 @@ BONDING STYLE: ${profile.bonding_style}`;
     }
 
     const aiData = await aiResponse.json();
-    const assistantMessage = aiData.choices?.[0]?.message?.content;
+    const assistantMessage = aiData.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!assistantMessage) {
       console.error("No message in AI response:", JSON.stringify(aiData));
@@ -305,23 +317,18 @@ ${suggestionsContext}
 Assistant: ${assistantMessage}`;
 
     try {
-      const suggestionsResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      const suggestionsResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash-lite",
-          messages: [{ role: "user", content: suggestionsPrompt }],
-          temperature: 0.8,
-          max_tokens: 150,
+          contents: [{ role: "user", parts: [{ text: suggestionsPrompt }] }],
+          generationConfig: { temperature: 0.8, maxOutputTokens: 150 },
         }),
       });
 
       if (suggestionsResponse.ok) {
         const suggestionsData = await suggestionsResponse.json();
-        const suggestionsText = suggestionsData.choices?.[0]?.message?.content;
+        const suggestionsText = suggestionsData.candidates?.[0]?.content?.parts?.[0]?.text;
         if (suggestionsText) {
           const suggestions = JSON.parse(suggestionsText.replace(/```json\n?|\n?```/g, ''));
           
