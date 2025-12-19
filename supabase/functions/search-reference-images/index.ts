@@ -85,11 +85,13 @@ serve(async (req) => {
       );
     }
 
-    // 1) Fast search (no scraping)
-    let searchQuery = `${query} portrait`;
-    if (sourceFilter === "wikipedia") searchQuery = `${query} site:wikipedia.org`;
-    if (sourceFilter === "official") searchQuery = `${query} official photo`;
-    if (sourceFilter === "google") searchQuery = `${query} photo`;
+    // 1) Fast search
+    // Use ONLY the provided name/query to keep results relevant.
+    // Source filters may narrow scope but we avoid adding broad terms like "portrait"/"photo".
+    let searchQuery = `${query}`.trim();
+    if (sourceFilter === "wikipedia") searchQuery = `${query} site:wikipedia.org`.trim();
+    if (sourceFilter === "official") searchQuery = `${query} official`.trim();
+    if (sourceFilter === "google") searchQuery = `${query}`.trim();
 
     console.log("Image search (fast):", searchQuery, "limit:", limit, "offset:", offset);
 
