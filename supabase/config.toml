@@ -53,3 +53,9 @@ verify_jwt = true
 
 [functions.migrate-avatar-images]
 verify_jwt = false
+
+[functions.search-reference-images]
+verify_jwt = true
+
+[functions.elevenlabs-tts]
+verify_jwt = true

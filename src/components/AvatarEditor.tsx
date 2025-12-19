@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sparkles, Upload, Loader2, Save, Link as LinkIcon, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { Sparkles, Upload, Loader2, Save, Link as LinkIcon, Trash2, ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -74,6 +74,9 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
   const [optimizingPersonality, setOptimizingPersonality] = useState(false);
   const [fetchingKnowledge, setFetchingKnowledge] = useState(false);
   const [processingDocs, setProcessingDocs] = useState(false);
+  const [searchingImages, setSearchingImages] = useState(false);
+  const [referenceImages, setReferenceImages] = useState<string[]>([]);
+  const [showImageSearch, setShowImageSearch] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -195,6 +198,73 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
       }
     } catch (error: any) {
       toast.error("Failed to fetch image from URL");
+    } finally {
+      setFetchingUrl(false);
+    }
+  };
+
+  const searchReferenceImages = async () => {
+    if (!editedAvatar.name?.trim()) {
+      toast.error("Please enter an avatar name first");
+      return;
+    }
+
+    setSearchingImages(true);
+    setShowImageSearch(true);
+    setReferenceImages([]);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("Please log in to search for images");
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke('search-reference-images', {
+        body: { query: editedAvatar.name }
+      });
+
+      if (error) throw error;
+
+      if (data?.images && Array.isArray(data.images)) {
+        setReferenceImages(data.images);
+        if (data.images.length === 0) {
+          toast.info("No reference images found. Try uploading an image instead.");
+        }
+      } else {
+        toast.error("No images found");
+      }
+    } catch (error: any) {
+      console.error('Error searching images:', error);
+      toast.error(error.message || "Failed to search for images");
+    } finally {
+      setSearchingImages(false);
+    }
+  };
+
+  const selectReferenceImage = async (url: string) => {
+    // Use the fetch-image-from-url function to import the selected image
+    setFetchingUrl(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('fetch-image-from-url', {
+        body: { 
+          imageUrl: url,
+          avatarId: avatar.id
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.imageUrl) {
+        const newUrl = `${data.imageUrl}?t=${Date.now()}`;
+        setEditedAvatar({ ...editedAvatar, image_url: newUrl, image_source: 'url-import' });
+        setPreviewUrl(newUrl);
+        toast.success("Reference image selected!");
+        setShowImageSearch(false);
+        setReferenceImages([]);
+      }
+    } catch (error: any) {
+      toast.error("Failed to use this image. Try another one.");
     } finally {
       setFetchingUrl(false);
     }
@@ -479,6 +549,73 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                     </Button>
                     <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
                   </label>
+
+                  {/* Search Reference Images */}
+                  <Button 
+                    variant="outline" 
+                    className="w-full" 
+                    size="sm"
+                    onClick={searchReferenceImages}
+                    disabled={searchingImages || !editedAvatar.name?.trim()}
+                  >
+                    {searchingImages ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
+                    Search Reference Images
+                  </Button>
+
+                  {/* Reference Images Results */}
+                  {showImageSearch && (
+                    <div className="mt-3 p-3 border rounded-lg bg-muted/30">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          {searchingImages ? 'Searching...' : `Found ${referenceImages.length} images`}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                          onClick={() => {
+                            setShowImageSearch(false);
+                            setReferenceImages([]);
+                          }}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                      
+                      {searchingImages ? (
+                        <div className="grid grid-cols-3 gap-2">
+                          {[1, 2, 3, 4, 5, 6].map((i) => (
+                            <Skeleton key={i} className="aspect-square rounded-md" />
+                          ))}
+                        </div>
+                      ) : referenceImages.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                          {referenceImages.map((imgUrl, index) => (
+                            <button
+                              key={index}
+                              onClick={() => selectReferenceImage(imgUrl)}
+                              disabled={fetchingUrl}
+                              className="relative aspect-square rounded-md overflow-hidden border-2 border-transparent hover:border-primary transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
+                            >
+                              <img
+                                src={imgUrl}
+                                alt={`Reference ${index + 1}`}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  // Hide broken images
+                                  (e.target as HTMLImageElement).style.display = 'none';
+                                }}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground text-center py-4">
+                          No images found. Try uploading an image instead.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </CollapsibleContent>
               </Collapsible>
             </div>
