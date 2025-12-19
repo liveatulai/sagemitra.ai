@@ -393,6 +393,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     }
     try {
       new URL(pasteImageUrl);
+      setShowImageSearch(true); // Ensure the panel is open to show options
       selectReferenceImage(pasteImageUrl.trim());
       setPasteImageUrl("");
     } catch {
