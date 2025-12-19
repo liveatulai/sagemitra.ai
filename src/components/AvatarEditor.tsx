@@ -209,7 +209,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     }
   };
 
-  const searchReferenceImages = async (loadMore = false) => {
+  const searchReferenceImages = async (loadMore = false, quickSearch = false) => {
     if (!editedAvatar.name?.trim()) {
       toast.error("Please enter an avatar name first");
       return;
@@ -220,8 +220,10 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     } else {
       setSearchingImages(true);
       setShowImageSearch(true);
-      setReferenceImages([]);
-      setImageOffset(0);
+      if (!quickSearch) {
+        setReferenceImages([]);
+        setImageOffset(0);
+      }
     }
 
     // Build accurate search query using name, title, and description
@@ -233,6 +235,8 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     }
     const searchQuery = searchParts.join(' ').trim();
     const currentOffset = loadMore ? imageOffset : 0;
+    // Quick search gets fewer results faster, then background search gets more
+    const searchLimit = quickSearch ? 6 : 12;
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -244,7 +248,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
       const { data, error } = await supabase.functions.invoke('search-reference-images', {
         body: { 
           query: searchQuery,
-          limit: 12,
+          limit: searchLimit,
           offset: currentOffset,
           sourceFilter: imageSourceFilter
         }
@@ -256,7 +260,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
         if (loadMore) {
           setReferenceImages(prev => [...prev, ...data.sources]);
         } else {
-          setReferenceImages(data.sources);
+          setReferenceImages(prev => quickSearch ? data.sources : data.sources);
         }
         setHasMoreImages(data.hasMore || false);
         setImageOffset(currentOffset + data.sources.length);
@@ -264,16 +268,58 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
         if (!loadMore && data.sources.length === 0) {
           toast.info("No reference images found. Try uploading an image instead.");
         }
+        
+        // After quick search completes, automatically fetch more in background
+        if (quickSearch && data.hasMore) {
+          setSearchingImages(false);
+          // Trigger background fetch for more images
+          fetchMoreImagesInBackground(searchQuery, data.sources.length);
+        }
       } else {
         if (!loadMore) toast.error("No images found");
       }
     } catch (error: any) {
       console.error('Error searching images:', error);
-      toast.error(error.message || "Failed to search for images");
+      if (!quickSearch) {
+        toast.error(error.message || "Failed to search for images");
+      }
     } finally {
-      setSearchingImages(false);
+      if (!quickSearch) {
+        setSearchingImages(false);
+      }
       setLoadingMore(false);
     }
+  };
+
+  const fetchMoreImagesInBackground = async (searchQuery: string, currentCount: number) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const { data, error } = await supabase.functions.invoke('search-reference-images', {
+        body: { 
+          query: searchQuery,
+          limit: 12,
+          offset: currentCount,
+          sourceFilter: imageSourceFilter
+        }
+      });
+
+      if (error) return;
+
+      if (data?.sources && Array.isArray(data.sources)) {
+        setReferenceImages(prev => [...prev, ...data.sources]);
+        setHasMoreImages(data.hasMore || false);
+        setImageOffset(currentCount + data.sources.length);
+      }
+    } catch {
+      // Silent fail for background fetch
+    }
+  };
+
+  const startImageSearch = () => {
+    // Start with quick search for fast initial results
+    searchReferenceImages(false, true);
   };
 
   const selectReferenceImage = (url: string) => {
@@ -630,7 +676,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                     variant="outline" 
                     className="w-full" 
                     size="sm"
-                    onClick={() => searchReferenceImages(false)}
+                    onClick={startImageSearch}
                     disabled={searchingImages || !editedAvatar.name?.trim()}
                   >
                     {searchingImages ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
@@ -642,7 +688,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                     <div className="mt-3 p-3 border rounded-lg bg-muted/30">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-medium text-muted-foreground">
-                          {searchingImages ? 'Searching...' : selectedReferenceUrl ? 'Selected image' : `Found ${referenceImages.length} images`}
+                          {searchingImages ? 'Searching...' : selectedReferenceUrl ? 'Selected image' : `Found ${referenceImages.length} images${loadingMore ? ' (loading more...)' : ''}`}
                         </span>
                         <Button
                           variant="ghost"
@@ -655,13 +701,13 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                       </div>
                       
                       {/* Source Filter */}
-                      {!selectedReferenceUrl && !searchingImages && (
+                      {!selectedReferenceUrl && referenceImages.length > 0 && (
                         <div className="flex gap-1 mb-3">
                           <Button
                             size="sm"
                             variant={imageSourceFilter === 'all' ? 'default' : 'outline'}
                             className="h-6 text-xs px-2"
-                            onClick={() => { setImageSourceFilter('all'); searchReferenceImages(false); }}
+                            onClick={() => { setImageSourceFilter('all'); setTimeout(startImageSearch, 0); }}
                           >
                             All
                           </Button>
@@ -669,7 +715,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                             size="sm"
                             variant={imageSourceFilter === 'wikipedia' ? 'default' : 'outline'}
                             className="h-6 text-xs px-2"
-                            onClick={() => { setImageSourceFilter('wikipedia'); searchReferenceImages(false); }}
+                            onClick={() => { setImageSourceFilter('wikipedia'); setTimeout(startImageSearch, 0); }}
                           >
                             Wikipedia
                           </Button>
@@ -677,7 +723,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                             size="sm"
                             variant={imageSourceFilter === 'official' ? 'default' : 'outline'}
                             className="h-6 text-xs px-2"
-                            onClick={() => { setImageSourceFilter('official'); searchReferenceImages(false); }}
+                            onClick={() => { setImageSourceFilter('official'); setTimeout(startImageSearch, 0); }}
                           >
                             Official
                           </Button>
