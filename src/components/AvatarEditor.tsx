@@ -249,11 +249,8 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
       }
     }
 
-    // Use custom query or build from avatar details
-    let searchQuery = queryToUse;
-    if (!customQuery && !customSearchQuery && editedAvatar.title) {
-      searchQuery += ' ' + editedAvatar.title;
-    }
+    // Use ONLY the name/custom query as requested (avoid adding titles that can broaden results)
+    const searchQuery = queryToUse;
     
     const cachedData = imageCache[cacheKey];
     const currentOffset = loadMore ? (cachedData?.offset || imageOffset) : 0;
