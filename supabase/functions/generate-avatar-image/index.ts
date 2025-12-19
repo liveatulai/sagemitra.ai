@@ -51,13 +51,13 @@ serve(async (req) => {
     const validatedData = imageGenSchema.parse(body);
     const { prompt, avatarId } = validatedData;
     
-    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-    if (!OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY not configured');
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+    if (!GEMINI_API_KEY) {
+      throw new Error('GEMINI_API_KEY not configured');
     }
 
     // Build the image prompt
-    const imagePrompt = `Photorealistic portrait of "${prompt}".
+    const imagePrompt = `Generate a photorealistic portrait of "${prompt}".
 
 COMPOSITION:
 - Head, neck, and upper shoulders visible
@@ -78,27 +78,34 @@ VISUAL STYLE:
 
 Single photorealistic portrait. No text, watermarks, or borders.`;
 
-    console.log('Calling OpenAI gpt-image-1 for image generation:', prompt);
+    console.log('Calling Gemini API for image generation:', prompt);
 
-    // Call OpenAI Image Generation API
-    const response = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-image-1',
-        prompt: imagePrompt,
-        n: 1,
-        size: '1024x1024',
-        quality: 'medium'
-      }),
-    });
+    // Call Gemini API with imagen model
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: imagePrompt }
+              ]
+            }
+          ],
+          generationConfig: {
+            responseModalities: ["image", "text"]
+          }
+        }),
+      }
+    );
 
     if (!response.ok) {
       const raw = await response.text();
-      console.error("OpenAI API error:", response.status, raw);
+      console.error("Gemini API error:", response.status, raw);
 
       if (response.status === 429) {
         return new Response(
@@ -107,9 +114,9 @@ Single photorealistic portrait. No text, watermarks, or borders.`;
         );
       }
       
-      if (response.status === 401) {
+      if (response.status === 401 || response.status === 403) {
         return new Response(
-          JSON.stringify({ error: "OpenAI API key is invalid." }),
+          JSON.stringify({ error: "Gemini API key is invalid or lacks permissions." }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -129,28 +136,26 @@ Single photorealistic portrait. No text, watermarks, or borders.`;
     }
 
     const data = await response.json();
-    console.log('OpenAI response received');
+    console.log('Gemini response received');
 
-    // gpt-image-1 returns base64 in data[0].b64_json
-    const b64 = data.data?.[0]?.b64_json;
-    const url = data.data?.[0]?.url;
-
-    let imageBuffer: Uint8Array | undefined;
-
-    if (b64) {
-      imageBuffer = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-    } else if (url) {
-      const imgResp = await fetch(url);
-      if (!imgResp.ok) {
-        throw new Error(`Failed to download generated image (${imgResp.status})`);
+    // Extract image from Gemini response
+    // Format: candidates[0].content.parts[].inlineData.data (base64)
+    let imageBase64: string | undefined;
+    
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    for (const part of parts) {
+      if (part.inlineData?.mimeType?.startsWith('image/')) {
+        imageBase64 = part.inlineData.data;
+        break;
       }
-      imageBuffer = new Uint8Array(await imgResp.arrayBuffer());
     }
 
-    if (!imageBuffer) {
-      console.error('No image in response:', JSON.stringify(data).substring(0, 500));
+    if (!imageBase64) {
+      console.error('No image in response:', JSON.stringify(data).substring(0, 1000));
       throw new Error('No image generated. Please try again.');
     }
+
+    const imageBuffer = Uint8Array.from(atob(imageBase64), c => c.charCodeAt(0));
 
     // Upload to storage
     const fileName = `${avatarId || Date.now()}.png`;
