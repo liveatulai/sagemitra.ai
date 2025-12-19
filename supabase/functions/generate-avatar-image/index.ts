@@ -191,8 +191,8 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
       };
     }
 
-    // Generate image using Gemini API directly (image generation model)
-    const model = "gemini-2.0-flash-image-generation";
+    // Generate image using Gemini Nano banana model (gemini-2.5-flash-image-preview)
+    const model = "gemini-2.5-flash-preview-image-generation";
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
       {
