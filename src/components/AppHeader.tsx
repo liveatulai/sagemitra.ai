@@ -1,12 +1,30 @@
+import { useState, useEffect } from "react";
 import { Home, MessageSquare, Users, BarChart3, Shield } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "./ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
 export default function AppHeader() {
   const location = useLocation();
   const { user } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    const checkAdmin = async () => {
+      if (!user) {
+        setIsAdmin(false);
+        return;
+      }
+      const { data } = await supabase.rpc('has_role', {
+        _user_id: user.id,
+        _role: 'admin'
+      });
+      setIsAdmin(!!data);
+    };
+    checkAdmin();
+  }, [user]);
 
   const navItems = [
     { icon: Home, label: "Home", path: "/" },
@@ -53,6 +71,21 @@ export default function AppHeader() {
                 </Link>
               );
             })}
+            {isAdmin && (
+              <Link to="/admin">
+                <Button
+                  variant={isActive("/admin") ? "default" : "ghost"}
+                  size="sm"
+                  className={cn(
+                    "gap-2",
+                    isActive("/admin") && "shadow-md"
+                  )}
+                >
+                  <Shield className="h-4 w-4" />
+                  Admin
+                </Button>
+              </Link>
+            )}
           </nav>
         </div>
       </div>
