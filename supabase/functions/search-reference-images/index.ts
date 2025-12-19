@@ -89,14 +89,15 @@ serve(async (req) => {
     const images: { url: string; source: string; trusted: boolean }[] = [];
     const seenUrls = new Set<string>();
 
-    // Common image extensions
-    const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+    // Supported image extensions (excluding GIF which Gemini doesn't support)
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
     const isDirectImageUrl = (url: string) => {
       const lower = url.toLowerCase();
-      // Must have image extension AND not be a Wikipedia file page
+      // Must have supported image extension AND not be a Wikipedia file page
       const hasImageExt = imageExtensions.some(ext => lower.includes(ext));
       const isWikiFilePage = lower.includes('wikipedia.org/wiki/file:');
-      return hasImageExt && !isWikiFilePage;
+      const isGif = lower.includes('.gif'); // Explicitly exclude GIFs
+      return hasImageExt && !isWikiFilePage && !isGif;
     };
 
     // Check if URL is from a trusted source

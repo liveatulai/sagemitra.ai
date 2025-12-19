@@ -58,10 +58,26 @@ serve(async (req) => {
     }
 
     let messageContent: any;
+    let processedReferenceUrl = referenceImageUrl;
 
+    // Validate reference image format - Gemini only supports jpg, jpeg, png, webp
     if (referenceImageUrl) {
+      const lowerUrl = referenceImageUrl.toLowerCase();
+      const supportedFormats = ['.jpg', '.jpeg', '.png', '.webp'];
+      const isSupported = supportedFormats.some(fmt => lowerUrl.includes(fmt));
+      
+      if (!isSupported) {
+        // Check if it's a GIF or unsupported format
+        if (lowerUrl.includes('.gif') || lowerUrl.includes('.bmp') || lowerUrl.includes('.tiff')) {
+          console.log('Unsupported image format, falling back to text-only generation');
+          processedReferenceUrl = undefined;
+        }
+      }
+    }
+
+    if (processedReferenceUrl) {
       // With reference image - use image editing/transformation
-      console.log('Generating avatar from reference image:', referenceImageUrl);
+      console.log('Generating avatar from reference image:', processedReferenceUrl);
       
       const enhancedPrompt = `Transform this reference image into a professional avatar portrait for "${prompt}".
 
@@ -83,7 +99,7 @@ OUTPUT: Single styled portrait matching the avatar aesthetic. No text or borders
 
       messageContent = [
         { type: "text", text: enhancedPrompt },
-        { type: "image_url", image_url: { url: referenceImageUrl } }
+        { type: "image_url", image_url: { url: processedReferenceUrl } }
       ];
     } else {
       // Without reference - generate from scratch
