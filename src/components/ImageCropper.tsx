@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Canvas as FabricCanvas, FabricImage, Circle } from "fabric";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { ZoomIn, ZoomOut, RotateCcw, Move, Check, X, FlipHorizontal } from "lucide-react";
 
@@ -64,38 +64,22 @@ export default function ImageCropper({ imageUrl, open, onOpenChange, onCropCompl
   useEffect(() => {
     if (!fabricCanvas || !imageUrl || !open) return;
 
+    let cancelled = false;
+    let objectUrlToRevoke: string | null = null;
+
     setIsLoading(true);
 
-    // First load image via HTMLImageElement to handle CORS properly
-    const loadImage = async () => {
+    const load = async () => {
       try {
-        // Create an image element to load the image
-        const htmlImg = new Image();
-        htmlImg.crossOrigin = "anonymous";
-        
-        // Create a promise to wait for image load
-        await new Promise<void>((resolve, reject) => {
-          htmlImg.onload = () => resolve();
-          htmlImg.onerror = () => reject(new Error("Failed to load image"));
-          htmlImg.src = imageUrl;
-        });
+        // Fetch as blob first (fast + avoids tainted canvas issues)
+        const res = await fetch(imageUrl, { mode: "cors" });
+        if (!res.ok) throw new Error(`Image fetch failed: ${res.status}`);
+        const blob = await res.blob();
 
-        // Convert to data URL using a temporary canvas to avoid CORS issues
-        const tempCanvas = document.createElement("canvas");
-        tempCanvas.width = htmlImg.naturalWidth || htmlImg.width;
-        tempCanvas.height = htmlImg.naturalHeight || htmlImg.height;
-        const ctx = tempCanvas.getContext("2d");
-        if (!ctx) throw new Error("No canvas context");
-        ctx.drawImage(htmlImg, 0, 0);
-        const dataUrl = tempCanvas.toDataURL("image/png");
+        objectUrlToRevoke = URL.createObjectURL(blob);
 
-        // Now load from the data URL (no CORS issues)
-        const img = await FabricImage.fromURL(dataUrl);
-        
-        if (!img || !fabricCanvas) {
-          setIsLoading(false);
-          return;
-        }
+        const img = await FabricImage.fromURL(objectUrlToRevoke);
+        if (cancelled || !img) return;
 
         // Calculate scale to fit image nicely
         const maxDim = Math.max(img.width || 1, img.height || 1);
@@ -114,17 +98,12 @@ export default function ImageCropper({ imageUrl, open, onOpenChange, onCropCompl
         });
 
         // Remove old image if exists
-        const objects = fabricCanvas.getObjects();
-        objects.forEach((obj) => {
-          if (obj instanceof FabricImage) {
-            fabricCanvas.remove(obj);
-          }
+        fabricCanvas.getObjects().forEach((obj) => {
+          if (obj instanceof FabricImage) fabricCanvas.remove(obj);
         });
 
-        // Store original scale for zoom reference
         (img as any).__originalScale = scale;
 
-        // Add to canvas (behind the circle guide)
         fabricCanvas.insertAt(0, img);
         setImageObj(img);
         setZoom(100);
@@ -133,11 +112,24 @@ export default function ImageCropper({ imageUrl, open, onOpenChange, onCropCompl
         fabricCanvas.renderAll();
       } catch (err) {
         console.error("Failed to load image:", err);
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
-    loadImage();
+    // Hard timeout so we never spin forever
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) {
+        console.error("Image load timed out");
+        setIsLoading(false);
+      }
+    }, 8000);
+
+    load().finally(() => window.clearTimeout(timeout));
+
+    return () => {
+      cancelled = true;
+      if (objectUrlToRevoke) URL.revokeObjectURL(objectUrlToRevoke);
+    };
   }, [fabricCanvas, imageUrl, open]);
 
   // Handle zoom changes
@@ -223,6 +215,9 @@ export default function ImageCropper({ imageUrl, open, onOpenChange, onCropCompl
             <Move className="w-5 h-5" />
             Crop & Position Image
           </DialogTitle>
+          <DialogDescription>
+            Drag to position, zoom in/out, and optionally flip before applying.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col items-center gap-4">
