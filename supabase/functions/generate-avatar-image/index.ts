@@ -51,46 +51,17 @@ serve(async (req) => {
     const validatedData = imageGenSchema.parse(body);
     const { prompt, avatarId, referenceImageUrl } = validatedData;
     
-    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
-    if (!GEMINI_API_KEY) {
-      throw new Error('GEMINI_API_KEY not configured');
-    }
-
-    let imagePrompt: string;
-    let base64ImageData: string | undefined;
-
-    // Download reference image if provided
-    if (referenceImageUrl) {
-      try {
-        console.log('Downloading reference image...');
-        const imageResponse = await fetch(referenceImageUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'image/*',
-          }
-        });
-
-        if (imageResponse.ok) {
-          const arrayBuffer = await imageResponse.arrayBuffer();
-          const uint8Array = new Uint8Array(arrayBuffer);
-          let binary = '';
-          for (let i = 0; i < uint8Array.length; i++) {
-            binary += String.fromCharCode(uint8Array[i]);
-          }
-          base64ImageData = btoa(binary);
-          console.log('Successfully converted image to base64, size:', base64ImageData.length);
-        }
-      } catch (err) {
-        console.error('Error downloading reference image:', err);
-      }
+    const XAI_API_KEY = Deno.env.get('XAI_API_KEY');
+    if (!XAI_API_KEY) {
+      throw new Error('XAI_API_KEY not configured');
     }
 
     // Build the image prompt
-    if (base64ImageData) {
-      console.log('Generating avatar from reference image');
-      imagePrompt = `Transform this reference image into a professional avatar portrait for "${prompt}".
-
-Use the person's face from the reference image as the basis.
+    let imagePrompt: string;
+    
+    if (referenceImageUrl) {
+      console.log('Generating avatar with reference to:', prompt);
+      imagePrompt = `Create a professional avatar portrait for "${prompt}".
 
 APPLY THIS STYLE:
 - Professional studio portrait with warm cinematic color grading
@@ -135,51 +106,42 @@ VISUAL STYLE:
 OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
     }
 
-    console.log('Calling Gemini API with gemini-2.0-flash-exp for image generation');
+    console.log('Calling xAI Grok API for image generation');
 
-    // Build request body for Gemini generateContent with image output
-    const requestBody: any = {
-      contents: [{
-        parts: base64ImageData 
-          ? [
-              { text: imagePrompt },
-              { inlineData: { mimeType: "image/jpeg", data: base64ImageData } }
-            ]
-          : [{ text: imagePrompt }]
-      }],
-      generationConfig: {
-        responseModalities: ["IMAGE", "TEXT"]
-      }
-    };
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-      }
-    );
+    // Call xAI/Grok image generation API
+    const response = await fetch('https://api.x.ai/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${XAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'grok-2-image',
+        prompt: imagePrompt,
+        n: 1,
+        size: '1024x1024',
+        response_format: 'b64_json',
+      }),
+    });
 
     if (!response.ok) {
       const raw = await response.text();
-      console.error("Gemini API error:", response.status, raw);
+      console.error("xAI API error:", response.status, raw);
 
       let friendly = `Image generation failed (${response.status}).`;
       
       if (response.status === 429) {
-        friendly = "Gemini rate limit reached. Please try again in a moment.";
+        friendly = "xAI rate limit reached. Please try again in a moment.";
       } else if (response.status === 403) {
-        friendly = "Gemini API access denied. Check your API key permissions.";
+        friendly = "xAI API access denied. Check your API key permissions.";
       } else if (response.status === 401) {
-        friendly = "Gemini API key is invalid or unauthorized.";
+        friendly = "xAI API key is invalid or unauthorized.";
       } else if (response.status === 400) {
-        // Parse error message for more details
         try {
           const parsed = JSON.parse(raw);
           const msg = parsed?.error?.message;
           if (msg) {
-            friendly = `Gemini error: ${msg}`;
+            friendly = `xAI error: ${msg}`;
           }
         } catch {}
       }
@@ -191,22 +153,14 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
     }
 
     const data = await response.json();
-    console.log('Gemini response received');
+    console.log('xAI response received');
 
-    // Extract image from response
-    const parts = data.candidates?.[0]?.content?.parts || [];
-    let generatedImageData: string | undefined;
-
-    for (const part of parts) {
-      if (part.inlineData?.mimeType?.startsWith('image/')) {
-        generatedImageData = part.inlineData.data;
-        break;
-      }
-    }
+    // Extract image from response (OpenAI-compatible format)
+    const generatedImageData = data.data?.[0]?.b64_json;
 
     if (!generatedImageData) {
-      console.error('No image in Gemini response:', JSON.stringify(data).substring(0, 500));
-      throw new Error('No image generated. The model may not support image generation with this prompt.');
+      console.error('No image in xAI response:', JSON.stringify(data).substring(0, 500));
+      throw new Error('No image generated. Please try again.');
     }
 
     // Convert base64 to buffer
