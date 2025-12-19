@@ -109,6 +109,7 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
     console.log('Calling xAI Grok API for image generation');
 
     // Call xAI/Grok image generation API
+    // NOTE: xAI's images API is OpenAI-like but may reject some optional params (e.g. size) depending on model/account.
     const response = await fetch('https://api.x.ai/v1/images/generations', {
       method: 'POST',
       headers: {
@@ -119,8 +120,7 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
         model: 'grok-2-image',
         prompt: imagePrompt,
         n: 1,
-        size: '1024x1024',
-        response_format: 'b64_json',
+        // Intentionally omit `size` and `response_format` to avoid 400 "Argument not supported" errors.
       }),
     });
 
@@ -139,7 +139,7 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
       } else if (response.status === 400) {
         try {
           const parsed = JSON.parse(raw);
-          const msg = parsed?.error?.message;
+          const msg = parsed?.error?.message || parsed?.error;
           if (msg) {
             friendly = `xAI error: ${msg}`;
           }
@@ -156,15 +156,25 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
     console.log('xAI response received');
 
     // Extract image from response (OpenAI-compatible format)
-    const generatedImageData = data.data?.[0]?.b64_json;
+    const url: string | undefined = data.data?.[0]?.url;
+    const b64: string | undefined = data.data?.[0]?.b64_json;
 
-    if (!generatedImageData) {
+    let imageBuffer: Uint8Array | undefined;
+
+    if (b64) {
+      imageBuffer = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    } else if (url) {
+      const imgResp = await fetch(url);
+      if (!imgResp.ok) {
+        throw new Error(`Failed to download generated image (${imgResp.status})`);
+      }
+      imageBuffer = new Uint8Array(await imgResp.arrayBuffer());
+    }
+
+    if (!imageBuffer) {
       console.error('No image in xAI response:', JSON.stringify(data).substring(0, 500));
       throw new Error('No image generated. Please try again.');
     }
-
-    // Convert base64 to buffer
-    const imageBuffer = Uint8Array.from(atob(generatedImageData), c => c.charCodeAt(0));
 
     // Upload to storage
     const fileName = `${avatarId || Date.now()}.png`;
