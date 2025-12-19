@@ -330,7 +330,15 @@ export default function AvatarGrid() {
           <div className="flex items-center justify-between h-14 sm:h-16">
             {/* Logo */}
             <div className="flex items-center gap-2 flex-1 min-w-0">
-              <Flower2 className="h-8 w-8 sm:h-10 sm:w-10 text-primary shrink-0" />
+              <svg width="0" height="0" className="absolute">
+                <defs>
+                  <linearGradient id="logo-gradient-grid" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="hsl(var(--primary))" />
+                    <stop offset="100%" stopColor="hsl(var(--accent))" />
+                  </linearGradient>
+                </defs>
+              </svg>
+              <Flower2 className="h-8 w-8 sm:h-10 sm:w-10 shrink-0" style={{ stroke: 'url(#logo-gradient-grid)' }} />
               <div>
                 <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
                   SageMitra

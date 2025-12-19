@@ -45,7 +45,15 @@ export default function AppHeader() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
-            <Flower2 className="h-8 w-8 text-primary" />
+            <svg width="0" height="0" className="absolute">
+              <defs>
+                <linearGradient id="logo-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="hsl(var(--primary))" />
+                  <stop offset="100%" stopColor="hsl(var(--accent))" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <Flower2 className="h-8 w-8" style={{ stroke: 'url(#logo-gradient)' }} />
             <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
               SageMitra
             </h1>
