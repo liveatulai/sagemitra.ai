@@ -51,24 +51,24 @@ serve(async (req) => {
     const validatedData = imageGenSchema.parse(body);
     const { prompt, avatarId } = validatedData;
     
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY not configured');
+    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+    if (!OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY not configured');
     }
 
     // Build the image prompt
-    const imagePrompt = `Generate a photorealistic portrait of "${prompt}".
+    const imagePrompt = `Photorealistic portrait of "${prompt}".
 
 COMPOSITION:
 - Head, neck, and upper shoulders visible
-- Subject centered with adequate space for circular avatar cropping
+- Subject centered, suitable for circular avatar cropping
 - Face occupies approximately 60% of frame height
-- Square aspect ratio, suitable for profile picture use
+- Square aspect ratio for profile picture use
 
 VISUAL STYLE:
 - Warm cinematic color grading with golden undertones
 - Soft vignette effect
-- Professional studio lighting: diffused key light from front-left, subtle fill
+- Professional studio lighting: diffused key light, subtle fill
 - Rich shadows with smooth gradients
 - Slightly desaturated, timeless aesthetic
 - Dark gradient background (charcoal to black)
@@ -76,32 +76,29 @@ VISUAL STYLE:
 - Dignified, contemplative expression
 - Editorial magazine portrait quality
 
-OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
+Single photorealistic portrait. No text, watermarks, or borders.`;
 
-    console.log('Calling Lovable AI Gateway for image generation:', prompt);
+    console.log('Calling OpenAI gpt-image-1 for image generation:', prompt);
 
-    // Call Lovable AI Gateway with Gemini image model
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    // Call OpenAI Image Generation API
+    const response = await fetch('https://api.openai.com/v1/images/generations', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-image-preview',
-        messages: [
-          {
-            role: 'user',
-            content: imagePrompt
-          }
-        ],
-        modalities: ['image', 'text']
+        model: 'gpt-image-1',
+        prompt: imagePrompt,
+        n: 1,
+        size: '1024x1024',
+        quality: 'medium'
       }),
     });
 
     if (!response.ok) {
       const raw = await response.text();
-      console.error("Lovable AI Gateway error:", response.status, raw);
+      console.error("OpenAI API error:", response.status, raw);
 
       if (response.status === 429) {
         return new Response(
@@ -110,38 +107,50 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
         );
       }
       
-      if (response.status === 402) {
+      if (response.status === 401) {
         return new Response(
-          JSON.stringify({ error: "AI credits exhausted. Please add credits to continue." }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ error: "OpenAI API key is invalid." }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
+      let errorMessage = `Image generation failed (${response.status}).`;
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed?.error?.message) {
+          errorMessage = parsed.error.message;
+        }
+      } catch {}
+
       return new Response(
-        JSON.stringify({ error: `Image generation failed (${response.status}).` }),
+        JSON.stringify({ error: errorMessage }),
         { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const data = await response.json();
-    console.log('Lovable AI response received');
+    console.log('OpenAI response received');
 
-    // Extract image from Gemini response format
-    const imageDataUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    // gpt-image-1 returns base64 in data[0].b64_json
+    const b64 = data.data?.[0]?.b64_json;
+    const url = data.data?.[0]?.url;
 
-    if (!imageDataUrl) {
+    let imageBuffer: Uint8Array | undefined;
+
+    if (b64) {
+      imageBuffer = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    } else if (url) {
+      const imgResp = await fetch(url);
+      if (!imgResp.ok) {
+        throw new Error(`Failed to download generated image (${imgResp.status})`);
+      }
+      imageBuffer = new Uint8Array(await imgResp.arrayBuffer());
+    }
+
+    if (!imageBuffer) {
       console.error('No image in response:', JSON.stringify(data).substring(0, 500));
       throw new Error('No image generated. Please try again.');
     }
-
-    // Parse base64 data URL (format: data:image/png;base64,...)
-    const base64Match = imageDataUrl.match(/^data:image\/\w+;base64,(.+)$/);
-    if (!base64Match) {
-      console.error('Invalid image data URL format');
-      throw new Error('Invalid image format received.');
-    }
-
-    const imageBuffer = Uint8Array.from(atob(base64Match[1]), c => c.charCodeAt(0));
 
     // Upload to storage
     const fileName = `${avatarId || Date.now()}.png`;
