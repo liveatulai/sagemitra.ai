@@ -90,14 +90,15 @@ export default function OnboardingFlow() {
     if (!user) return;
 
     try {
+      // Use upsert to create profile if it doesn't exist
       await supabase
         .from("profiles")
-        .update({
+        .upsert({
+          id: user.id,
           onboarding_completed: true,
           preferred_vibe: selectedVibe,
           first_avatar_id: selectedAvatar,
-        })
-        .eq("id", user.id);
+        }, { onConflict: 'id' });
 
       // Create initial chat session with selected avatar
       if (selectedAvatar) {
