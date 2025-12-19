@@ -59,6 +59,7 @@ serve(async (req) => {
 
     let messageContent: any;
     let processedReferenceUrl = referenceImageUrl;
+    let base64Image: string | undefined;
 
     // Validate reference image format - Gemini only supports jpg, jpeg, png, webp
     if (referenceImageUrl) {
@@ -73,11 +74,49 @@ serve(async (req) => {
           processedReferenceUrl = undefined;
         }
       }
+
+      // Download the image and convert to base64 to avoid 403 errors
+      if (processedReferenceUrl) {
+        try {
+          console.log('Downloading reference image to convert to base64...');
+          const imageResponse = await fetch(processedReferenceUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'image/*',
+            }
+          });
+
+          if (imageResponse.ok) {
+            const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
+            const arrayBuffer = await imageResponse.arrayBuffer();
+            const uint8Array = new Uint8Array(arrayBuffer);
+            
+            // Convert to base64
+            let binary = '';
+            for (let i = 0; i < uint8Array.length; i++) {
+              binary += String.fromCharCode(uint8Array[i]);
+            }
+            base64Image = btoa(binary);
+            
+            // Create data URL
+            const mimeType = contentType.split(';')[0];
+            processedReferenceUrl = `data:${mimeType};base64,${base64Image}`;
+            console.log('Successfully converted image to base64, size:', base64Image.length);
+          } else {
+            console.log('Failed to download reference image:', imageResponse.status, '- falling back to text-only');
+            processedReferenceUrl = undefined;
+          }
+        } catch (downloadError) {
+          console.error('Error downloading reference image:', downloadError);
+          console.log('Falling back to text-only generation');
+          processedReferenceUrl = undefined;
+        }
+      }
     }
 
     if (processedReferenceUrl) {
       // With reference image - use image editing/transformation
-      console.log('Generating avatar from reference image:', processedReferenceUrl);
+      console.log('Generating avatar from reference image (base64)');
       
       const enhancedPrompt = `Transform this reference image into a professional avatar portrait for "${prompt}".
 
@@ -167,15 +206,15 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
     }
 
     const data = await response.json();
-    const base64Image = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    const generatedImageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
     
-    if (!base64Image) {
+    if (!generatedImageUrl) {
       console.error('No image in Lovable AI response:', JSON.stringify(data).substring(0, 500));
       throw new Error('No image in response');
     }
 
     // Extract base64 data
-    const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
+    const base64Data = generatedImageUrl.replace(/^data:image\/\w+;base64,/, '');
     const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
 
     // Upload to storage
