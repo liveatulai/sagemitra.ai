@@ -124,18 +124,22 @@ export function generateContextualGesture(avatarName: string): string {
 
 export default function PresenceLayer({ avatarName, isTyping, enabled = true, onGestureGenerated }: PresenceLayerProps) {
   const [lastGesture, setLastGesture] = useState<string>("");
-  const [typingSessionId, setTypingSessionId] = useState<number>(0);
+  const [hasGeneratedForSession, setHasGeneratedForSession] = useState(false);
+
+  // Reset when typing stops
+  useEffect(() => {
+    if (!isTyping) {
+      setHasGeneratedForSession(false);
+    }
+  }, [isTyping]);
 
   useEffect(() => {
-    if (!enabled || !isTyping || !onGestureGenerated) return;
-
-    // Create a new typing session ID
-    const sessionId = Date.now();
-    setTypingSessionId(sessionId);
+    // Only generate ONE gesture per typing session
+    if (!enabled || !isTyping || !onGestureGenerated || hasGeneratedForSession) return;
 
     const timer = setTimeout(() => {
-      // Only proceed if this is still the active typing session
-      if (sessionId !== typingSessionId) return;
+      // Mark that we've generated a gesture for this session
+      setHasGeneratedForSession(true);
 
       const gestures = presenceGestures[avatarName] || [
         "✨ *looking at you with compassion* ✨",
@@ -154,10 +158,10 @@ export default function PresenceLayer({ avatarName, isTyping, enabled = true, on
 
       setLastGesture(randomGesture);
       onGestureGenerated(randomGesture);
-    }, 800);
+    }, 1500); // Increased delay to 1.5s - only show after extended typing
 
     return () => clearTimeout(timer);
-  }, [avatarName, isTyping, enabled, lastGesture, typingSessionId]);
+  }, [avatarName, isTyping, enabled, lastGesture, onGestureGenerated, hasGeneratedForSession]);
 
   // This component doesn't render anything itself
   // Gestures are sent to parent to be rendered inline in messages
