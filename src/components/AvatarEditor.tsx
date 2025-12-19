@@ -754,32 +754,34 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                     </div>
                   </div>
                 ) : previewUrl ? (
-                  <div className="relative w-full h-full group">
-                    <img
-                      src={previewUrl}
-                      alt={editedAvatar.name}
-                      className="w-full h-full object-cover"
-                      style={{ aspectRatio: '1/1' }}
-                      key={previewUrl}
-                    />
-                    {/* Crop button overlay */}
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg h-7 px-2"
-                      onClick={() => openCropper(previewUrl)}
-                      title="Crop & Position"
-                    >
-                      <Crop className="w-3 h-3 mr-1" />
-                      Crop
-                    </Button>
-                  </div>
+                  <img
+                    src={previewUrl}
+                    alt={editedAvatar.name}
+                    className="w-full h-full object-cover"
+                    style={{ aspectRatio: '1/1' }}
+                    key={previewUrl}
+                  />
                 ) : (
                   <div className="w-full h-full bg-muted flex items-center justify-center">
                     <Sparkles className="w-8 h-8 text-muted-foreground" />
                   </div>
                 )}
               </div>
+              
+              {/* Edit buttons below avatar */}
+              {previewUrl && (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 px-3"
+                    onClick={() => openCropper(previewUrl)}
+                  >
+                    <Crop className="w-3 h-3 mr-1" />
+                    Crop & Flip
+                  </Button>
+                </div>
+              )}
               
               <Collapsible open={imageOpen} onOpenChange={setImageOpen} className="w-full">
                 <CollapsibleTrigger asChild>

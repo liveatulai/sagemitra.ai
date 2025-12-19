@@ -66,10 +66,33 @@ export default function ImageCropper({ imageUrl, open, onOpenChange, onCropCompl
 
     setIsLoading(true);
 
-    // Load image using FabricImage.fromURL
-    FabricImage.fromURL(imageUrl, { crossOrigin: "anonymous" })
-      .then((img) => {
-        if (!img) {
+    // First load image via HTMLImageElement to handle CORS properly
+    const loadImage = async () => {
+      try {
+        // Create an image element to load the image
+        const htmlImg = new Image();
+        htmlImg.crossOrigin = "anonymous";
+        
+        // Create a promise to wait for image load
+        await new Promise<void>((resolve, reject) => {
+          htmlImg.onload = () => resolve();
+          htmlImg.onerror = () => reject(new Error("Failed to load image"));
+          htmlImg.src = imageUrl;
+        });
+
+        // Convert to data URL using a temporary canvas to avoid CORS issues
+        const tempCanvas = document.createElement("canvas");
+        tempCanvas.width = htmlImg.naturalWidth || htmlImg.width;
+        tempCanvas.height = htmlImg.naturalHeight || htmlImg.height;
+        const ctx = tempCanvas.getContext("2d");
+        if (!ctx) throw new Error("No canvas context");
+        ctx.drawImage(htmlImg, 0, 0);
+        const dataUrl = tempCanvas.toDataURL("image/png");
+
+        // Now load from the data URL (no CORS issues)
+        const img = await FabricImage.fromURL(dataUrl);
+        
+        if (!img || !fabricCanvas) {
           setIsLoading(false);
           return;
         }
@@ -108,11 +131,13 @@ export default function ImageCropper({ imageUrl, open, onOpenChange, onCropCompl
         setIsFlipped(false);
         setIsLoading(false);
         fabricCanvas.renderAll();
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error("Failed to load image:", err);
         setIsLoading(false);
-      });
+      }
+    };
+
+    loadImage();
   }, [fabricCanvas, imageUrl, open]);
 
   // Handle zoom changes
