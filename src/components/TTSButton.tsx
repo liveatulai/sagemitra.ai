@@ -70,8 +70,8 @@ export default function TTSButton({ text, emotion = "calm", avatarType }: TTSBut
 
   const handleTTS = useCallback(() => {
     if (!window.speechSynthesis) {
-      toast.error("Text-to-speech not supported", { 
-        description: "Please use Chrome, Safari, or Edge browser" 
+      toast.error("Text-to-speech not supported", {
+        description: "Please use Chrome, Safari, or Edge browser",
       });
       return;
     }
@@ -84,85 +84,89 @@ export default function TTSButton({ text, emotion = "calm", avatarType }: TTSBut
 
     // Sanitize and prepare text
     const sanitizedText = sanitizeTextForTTS(text);
-    const textWithPauses = addNaturalPauses(sanitizedText);
-    
-    if (!textWithPauses.trim()) {
+    let textToSpeak = addNaturalPauses(sanitizedText).trim();
+
+    if (!textToSpeak) {
       toast.info("Nothing to read");
       return;
     }
 
+    // Web Speech can fail on very long utterances; keep this conservative.
+    const MAX_CHARS = 1200;
+    if (textToSpeak.length > MAX_CHARS) {
+      textToSpeak = textToSpeak.slice(0, MAX_CHARS);
+      toast.info("Reading a shorter excerpt", {
+        description: "This message is long, so we're reading the first part.",
+        duration: 2500,
+      });
+    }
+
     setIsLoading(true);
 
-    // Cancel any previous speech
-    window.speechSynthesis.cancel();
+    try {
+      // IMPORTANT: keep speak() synchronous with the click handler (some browsers fail otherwise)
+      window.speechSynthesis.cancel();
 
-    // Small delay to ensure cancel is processed
-    setTimeout(() => {
-      try {
-        const newUtterance = new SpeechSynthesisUtterance(textWithPauses);
-        utteranceRef.current = newUtterance;
-        
-        // Select best voice
-        const currentVoices = voices.length > 0 ? voices : window.speechSynthesis.getVoices();
-        const preferredVoice = currentVoices.find(v => 
-          v.lang.startsWith('en') && v.name.includes('Google')
-        ) || currentVoices.find(v => 
-          v.lang.startsWith('en') && (v.name.includes('Samantha') || v.name.includes('Daniel'))
-        ) || currentVoices.find(v => 
-          v.lang.startsWith('en')
-        ) || currentVoices[0];
-        
-        if (preferredVoice) {
-          newUtterance.voice = preferredVoice;
-        }
-        
-        const tone = getEmotionTone(emotion);
-        newUtterance.rate = tone.rate;
-        newUtterance.pitch = tone.pitch;
-        newUtterance.volume = 1;
-        
-        newUtterance.onstart = () => {
-          setIsLoading(false);
-          setIsPlaying(true);
-        };
-        
-        newUtterance.onend = () => {
-          setIsPlaying(false);
-          setIsLoading(false);
-          utteranceRef.current = null;
-        };
-        
-        newUtterance.onerror = (event) => {
-          console.error("Speech synthesis error:", event.error);
-          setIsPlaying(false);
-          setIsLoading(false);
-          utteranceRef.current = null;
-          
-          // Only show error for actual failures, not user-initiated stops
-          if (event.error && event.error !== 'interrupted' && event.error !== 'canceled') {
-            toast.error("Playback failed", { 
-              description: "Try clicking the speaker button again" 
-            });
-          }
-        };
+      const newUtterance = new SpeechSynthesisUtterance(textToSpeak);
+      utteranceRef.current = newUtterance;
 
-        window.speechSynthesis.speak(newUtterance);
-        
-        // Fallback: if onstart doesn't fire within 500ms, assume it started
-        setTimeout(() => {
-          if (utteranceRef.current === newUtterance && isLoading) {
-            setIsLoading(false);
-            setIsPlaying(true);
-          }
-        }, 500);
-        
-      } catch (error) {
-        console.error("Failed to start speech:", error);
+      const currentVoices = voices.length > 0 ? voices : window.speechSynthesis.getVoices();
+      const preferredVoice =
+        currentVoices.find((v) => v.lang.startsWith("en") && v.name.includes("Google")) ||
+        currentVoices.find(
+          (v) => v.lang.startsWith("en") && (v.name.includes("Samantha") || v.name.includes("Daniel"))
+        ) ||
+        currentVoices.find((v) => v.lang.startsWith("en")) ||
+        currentVoices[0];
+
+      if (preferredVoice) newUtterance.voice = preferredVoice;
+
+      const tone = getEmotionTone(emotion);
+      newUtterance.rate = tone.rate;
+      newUtterance.pitch = tone.pitch;
+      newUtterance.volume = 1;
+
+      newUtterance.onstart = () => {
+        setIsLoading(false);
+        setIsPlaying(true);
+      };
+
+      newUtterance.onend = () => {
         setIsPlaying(false);
         setIsLoading(false);
-        toast.error("Audio not available");
-      }
-    }, 100);
+        utteranceRef.current = null;
+      };
+
+      newUtterance.onerror = (event: any) => {
+        // Some browsers only provide event.error, some don't.
+        console.error("Speech synthesis error:", event?.error || event);
+        setIsPlaying(false);
+        setIsLoading(false);
+        utteranceRef.current = null;
+
+        const err = event?.error;
+        if (err && err !== "interrupted" && err !== "canceled") {
+          toast.error("Playback failed", {
+            description:
+              err === "synthesis-failed"
+                ? "Your browser's built-in voice engine failed. Try Chrome/Edge or enable system voices."
+                : "Please try again.",
+          });
+        }
+      };
+
+      window.speechSynthesis.speak(newUtterance);
+
+      // If onstart doesn't fire quickly, stop showing spinner (some engines don't emit onstart reliably)
+      window.setTimeout(() => {
+        setIsLoading(false);
+      }, 600);
+    } catch (error) {
+      console.error("Failed to start speech:", error);
+      setIsPlaying(false);
+      setIsLoading(false);
+      toast.error("Audio not available");
+    }
   }, [text, emotion, voices, isPlaying, isLoading, stopPlayback]);
 
   return (
