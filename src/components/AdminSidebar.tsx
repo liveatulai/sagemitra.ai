@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { useSwipeGesture } from "@/hooks/useSwipeGesture";
 
 interface AdminSidebarProps {
   activeTab: string;
@@ -33,6 +34,20 @@ const sidebarItems = [
 
 export default function AdminSidebar({ activeTab, onTabChange, isOpen, onToggle }: AdminSidebarProps) {
   const navigate = useNavigate();
+
+  // Add swipe gestures for mobile
+  useSwipeGesture({
+    onSwipeRight: () => {
+      if (!isOpen && window.innerWidth < 1024) {
+        onToggle();
+      }
+    },
+    onSwipeLeft: () => {
+      if (isOpen && window.innerWidth < 1024) {
+        onToggle();
+      }
+    },
+  });
 
   return (
     <>
