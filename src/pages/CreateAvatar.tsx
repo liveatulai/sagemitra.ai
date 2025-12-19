@@ -70,22 +70,34 @@ export default function CreateAvatar() {
 
   const generateImage = async () => {
     if (!avatarProfile || !isMounted) return;
-    
+
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('generate-avatar-image', {
-        body: { 
+      const { data, error } = await supabase.functions.invoke("generate-avatar-image", {
+        body: {
           prompt: avatarProfile.image_prompt || `${avatarProfile.name}, ${avatarProfile.title}`,
-          avatarId: crypto.randomUUID()
-        }
+          avatarId: crypto.randomUUID(),
+        },
       });
 
       if (!isMounted) return;
 
       if (error) {
-        console.error('Image generation error:', error);
-        const errorMessage = error.message || data?.error || "Failed to generate image";
-        toast.error(errorMessage);
+        console.error("Image generation error:", error);
+        const status = (error as any)?.context?.status as number | undefined;
+        const bodyErr = (error as any)?.context?.body?.error as string | undefined;
+        const retryAfterSeconds = (error as any)?.context?.body?.retryAfterSeconds as number | null | undefined;
+
+        if (status === 429) {
+          toast.error(
+            retryAfterSeconds
+              ? `Gemini rate limit reached. Try again in ~${retryAfterSeconds}s.`
+              : "Gemini rate limit reached. Please try again shortly."
+          );
+          return;
+        }
+
+        toast.error(bodyErr || error.message || data?.error || "Failed to generate image");
         return;
       }
 
@@ -96,10 +108,22 @@ export default function CreateAvatar() {
         toast.success("Image generated successfully!");
       }
     } catch (error: any) {
-      console.error('Error generating image:', error);
+      console.error("Error generating image:", error);
       if (!isMounted) return;
-      const errorMessage = error.context?.body?.error || error.message || "Failed to generate image";
-      toast.error(errorMessage);
+      const status = error?.context?.status as number | undefined;
+      const bodyErr = error?.context?.body?.error as string | undefined;
+      const retryAfterSeconds = error?.context?.body?.retryAfterSeconds as number | null | undefined;
+
+      if (status === 429) {
+        toast.error(
+          retryAfterSeconds
+            ? `Gemini rate limit reached. Try again in ~${retryAfterSeconds}s.`
+            : "Gemini rate limit reached. Please try again shortly."
+        );
+        return;
+      }
+
+      toast.error(bodyErr || error.message || "Failed to generate image");
     } finally {
       if (isMounted) {
         setLoading(false);
