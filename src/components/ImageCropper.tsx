@@ -3,7 +3,7 @@ import { Canvas as FabricCanvas, FabricImage, Circle } from "fabric";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
-import { ZoomIn, ZoomOut, RotateCcw, Move, Check, X } from "lucide-react";
+import { ZoomIn, ZoomOut, RotateCcw, Move, Check, X, FlipHorizontal } from "lucide-react";
 
 interface ImageCropperProps {
   imageUrl: string;
@@ -18,6 +18,7 @@ export default function ImageCropper({ imageUrl, open, onOpenChange, onCropCompl
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
   const [imageObj, setImageObj] = useState<FabricImage | null>(null);
   const [zoom, setZoom] = useState(100);
+  const [isFlipped, setIsFlipped] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const CANVAS_SIZE = 300;
@@ -104,6 +105,7 @@ export default function ImageCropper({ imageUrl, open, onOpenChange, onCropCompl
         fabricCanvas.insertAt(0, img);
         setImageObj(img);
         setZoom(100);
+        setIsFlipped(false);
         setIsLoading(false);
         fabricCanvas.renderAll();
       })
@@ -137,10 +139,21 @@ export default function ImageCropper({ imageUrl, open, onOpenChange, onCropCompl
     imageObj.set({
       left: CANVAS_SIZE / 2,
       top: CANVAS_SIZE / 2,
+      flipX: false,
     });
     setZoom(100);
+    setIsFlipped(false);
     fabricCanvas.renderAll();
   }, [imageObj, fabricCanvas]);
+
+  const handleFlip = useCallback(() => {
+    if (!imageObj || !fabricCanvas) return;
+    
+    const newFlipped = !isFlipped;
+    imageObj.set({ flipX: newFlipped });
+    setIsFlipped(newFlipped);
+    fabricCanvas.renderAll();
+  }, [imageObj, fabricCanvas, isFlipped]);
 
   const handleCrop = useCallback(() => {
     if (!fabricCanvas || !imageObj) return;
@@ -223,6 +236,10 @@ export default function ImageCropper({ imageUrl, open, onOpenChange, onCropCompl
         </div>
 
         <DialogFooter className="flex gap-2 sm:gap-2">
+          <Button variant="outline" size="sm" onClick={handleFlip} title="Flip horizontally">
+            <FlipHorizontal className="w-4 h-4 mr-2" />
+            Flip
+          </Button>
           <Button variant="outline" size="sm" onClick={handleReset}>
             <RotateCcw className="w-4 h-4 mr-2" />
             Reset
