@@ -110,8 +110,8 @@ serve(async (req) => {
     }
 
     let imagePrompt: string;
-    let requestBody: any;
 
+    // Build the image prompt
     if (processedReferenceUrl && base64ImageData) {
       // With reference image - use image editing/transformation
       console.log('Generating avatar from reference image (base64)');
@@ -133,23 +133,6 @@ APPLY THIS STYLE:
 - Editorial magazine portrait quality
 
 OUTPUT: Single styled portrait matching the avatar aesthetic. No text or borders.`;
-
-      requestBody = {
-        contents: [{
-          parts: [
-            { text: imagePrompt },
-            { 
-              inlineData: { 
-                mimeType: "image/jpeg", 
-                data: base64ImageData 
-              } 
-            }
-          ]
-        }],
-        generationConfig: {
-          responseModalities: ["TEXT", "IMAGE"],
-        }
-      };
     } else {
       // Without reference - generate from scratch
       console.log('Generating avatar from text prompt:', prompt);
@@ -180,21 +163,37 @@ VISUAL STYLE (consistent with existing avatars):
 - Editorial magazine portrait quality
 
 OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
-
-      requestBody = {
-        contents: [{
-          parts: [{ text: imagePrompt }]
-        }],
-        generationConfig: {
-          responseModalities: ["TEXT", "IMAGE"],
-        }
-      };
     }
 
-    // Generate image using Gemini Nano banana model (gemini-2.5-flash-image-preview)
-    const model = "gemini-2.5-flash-preview-image-generation";
+    // Use Imagen 3 API for image generation
+    const model = "imagen-3.0-generate-002";
+    
+    // Build request body for Imagen API
+    const requestBody: any = {
+      instances: [{
+        prompt: imagePrompt
+      }],
+      parameters: {
+        sampleCount: 1,
+        aspectRatio: "1:1",
+        personGeneration: "allow_adult"
+      }
+    };
+
+    // If we have a reference image, include it
+    if (base64ImageData) {
+      requestBody.instances[0].referenceImages = [{
+        referenceImage: {
+          bytesBase64Encoded: base64ImageData
+        },
+        referenceType: "REFERENCE_TYPE_STYLE"
+      }];
+    }
+
+    console.log('Calling Imagen API with model:', model);
+    
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -204,9 +203,9 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
 
     if (!response.ok) {
       const raw = await response.text();
-      console.error("Gemini image generation error:", response.status, raw);
+      console.error("Imagen generation error:", response.status, raw);
 
-      // Try to surface retry delay if provided by Gemini
+      // Try to surface retry delay if provided
       let retryAfterSeconds: number | null = null;
       try {
         const parsed = JSON.parse(raw);
@@ -222,9 +221,9 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
 
       const friendly =
         response.status === 429
-          ? "Gemini rate limit reached. Please wait a moment and try again."
+          ? "Imagen rate limit reached. Please wait a moment and try again."
           : response.status === 403
-            ? "Gemini API key is not allowed to generate images (billing/quota may be disabled)."
+            ? "Imagen API access denied (billing/quota may be disabled)."
             : response.status === 401
               ? "Gemini API key is invalid or unauthorized."
               : `Image generation failed (${response.status}).`;
@@ -243,20 +242,22 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
     }
 
     const data = await response.json();
+    console.log('Imagen response structure:', Object.keys(data));
     
-    // Extract image from Gemini response
-    const parts = data.candidates?.[0]?.content?.parts || [];
+    // Extract image from Imagen response
+    // Imagen returns: { predictions: [{ bytesBase64Encoded: "...", mimeType: "image/png" }] }
+    const predictions = data.predictions || [];
     let generatedImageData: string | undefined;
     
-    for (const part of parts) {
-      if (part.inlineData?.mimeType?.startsWith('image/')) {
-        generatedImageData = part.inlineData.data;
+    for (const pred of predictions) {
+      if (pred.bytesBase64Encoded) {
+        generatedImageData = pred.bytesBase64Encoded;
         break;
       }
     }
     
     if (!generatedImageData) {
-      console.error('No image in Gemini response:', JSON.stringify(data).substring(0, 500));
+      console.error('No image in Imagen response:', JSON.stringify(data).substring(0, 500));
       throw new Error('No image in response');
     }
 
