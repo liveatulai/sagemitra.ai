@@ -75,10 +75,14 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
   const [fetchingKnowledge, setFetchingKnowledge] = useState(false);
   const [processingDocs, setProcessingDocs] = useState(false);
   const [searchingImages, setSearchingImages] = useState(false);
-  const [referenceImages, setReferenceImages] = useState<string[]>([]);
+  const [referenceImages, setReferenceImages] = useState<{ url: string; source: string; trusted: boolean }[]>([]);
   const [showImageSearch, setShowImageSearch] = useState(false);
   const [selectedReferenceUrl, setSelectedReferenceUrl] = useState<string | null>(null);
   const [generatingFromReference, setGeneratingFromReference] = useState(false);
+  const [imageSourceFilter, setImageSourceFilter] = useState<'all' | 'wikipedia' | 'official'>('all');
+  const [hasMoreImages, setHasMoreImages] = useState(false);
+  const [imageOffset, setImageOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -205,25 +209,30 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
     }
   };
 
-  const searchReferenceImages = async () => {
+  const searchReferenceImages = async (loadMore = false) => {
     if (!editedAvatar.name?.trim()) {
       toast.error("Please enter an avatar name first");
       return;
     }
 
-    setSearchingImages(true);
-    setShowImageSearch(true);
-    setReferenceImages([]);
+    if (loadMore) {
+      setLoadingMore(true);
+    } else {
+      setSearchingImages(true);
+      setShowImageSearch(true);
+      setReferenceImages([]);
+      setImageOffset(0);
+    }
 
     // Build accurate search query using name, title, and description
     const searchParts = [editedAvatar.name];
     if (editedAvatar.title) searchParts.push(editedAvatar.title);
     if (editedAvatar.description) {
-      // Take first 100 chars of description for context
       const shortDesc = editedAvatar.description.substring(0, 100);
       searchParts.push(shortDesc);
     }
     const searchQuery = searchParts.join(' ').trim();
+    const currentOffset = loadMore ? imageOffset : 0;
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -233,24 +242,37 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
       }
 
       const { data, error } = await supabase.functions.invoke('search-reference-images', {
-        body: { query: searchQuery }
+        body: { 
+          query: searchQuery,
+          limit: 12,
+          offset: currentOffset,
+          sourceFilter: imageSourceFilter
+        }
       });
 
       if (error) throw error;
 
-      if (data?.images && Array.isArray(data.images)) {
-        setReferenceImages(data.images);
-        if (data.images.length === 0) {
+      if (data?.sources && Array.isArray(data.sources)) {
+        if (loadMore) {
+          setReferenceImages(prev => [...prev, ...data.sources]);
+        } else {
+          setReferenceImages(data.sources);
+        }
+        setHasMoreImages(data.hasMore || false);
+        setImageOffset(currentOffset + data.sources.length);
+        
+        if (!loadMore && data.sources.length === 0) {
           toast.info("No reference images found. Try uploading an image instead.");
         }
       } else {
-        toast.error("No images found");
+        if (!loadMore) toast.error("No images found");
       }
     } catch (error: any) {
       console.error('Error searching images:', error);
       toast.error(error.message || "Failed to search for images");
     } finally {
       setSearchingImages(false);
+      setLoadingMore(false);
     }
   };
 
@@ -608,7 +630,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                     variant="outline" 
                     className="w-full" 
                     size="sm"
-                    onClick={searchReferenceImages}
+                    onClick={() => searchReferenceImages(false)}
                     disabled={searchingImages || !editedAvatar.name?.trim()}
                   >
                     {searchingImages ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
@@ -631,6 +653,36 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                           <X className="w-3 h-3" />
                         </Button>
                       </div>
+                      
+                      {/* Source Filter */}
+                      {!selectedReferenceUrl && !searchingImages && (
+                        <div className="flex gap-1 mb-3">
+                          <Button
+                            size="sm"
+                            variant={imageSourceFilter === 'all' ? 'default' : 'outline'}
+                            className="h-6 text-xs px-2"
+                            onClick={() => { setImageSourceFilter('all'); searchReferenceImages(false); }}
+                          >
+                            All
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={imageSourceFilter === 'wikipedia' ? 'default' : 'outline'}
+                            className="h-6 text-xs px-2"
+                            onClick={() => { setImageSourceFilter('wikipedia'); searchReferenceImages(false); }}
+                          >
+                            Wikipedia
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={imageSourceFilter === 'official' ? 'default' : 'outline'}
+                            className="h-6 text-xs px-2"
+                            onClick={() => { setImageSourceFilter('official'); searchReferenceImages(false); }}
+                          >
+                            Official
+                          </Button>
+                        </div>
+                      )}
                       
                       {/* Selected image - show options */}
                       {selectedReferenceUrl ? (
@@ -680,24 +732,46 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
                           ))}
                         </div>
                       ) : referenceImages.length > 0 ? (
-                        <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                          {referenceImages.map((imgUrl, index) => (
-                            <button
-                              key={index}
-                              onClick={() => selectReferenceImage(imgUrl)}
-                              disabled={fetchingUrl}
-                              className="relative aspect-square rounded-md overflow-hidden border-2 border-transparent hover:border-primary transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                            {referenceImages.map((img, index) => (
+                              <button
+                                key={index}
+                                onClick={() => selectReferenceImage(img.url)}
+                                disabled={fetchingUrl}
+                                className="relative aspect-square rounded-md overflow-hidden border-2 border-transparent hover:border-primary transition-colors focus:outline-none focus:ring-2 focus:ring-primary group"
+                              >
+                                <img
+                                  src={img.url}
+                                  alt={`Reference ${index + 1}`}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).parentElement!.style.display = 'none';
+                                  }}
+                                />
+                                {img.trusted && (
+                                  <span className="absolute top-0.5 right-0.5 bg-green-500 text-white text-[8px] px-1 rounded">
+                                    ✓
+                                  </span>
+                                )}
+                                <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[8px] px-1 truncate opacity-0 group-hover:opacity-100 transition-opacity">
+                                  {img.source}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                          {hasMoreImages && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="w-full h-7 text-xs"
+                              onClick={() => searchReferenceImages(true)}
+                              disabled={loadingMore}
                             >
-                              <img
-                                src={imgUrl}
-                                alt={`Reference ${index + 1}`}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display = 'none';
-                                }}
-                              />
-                            </button>
-                          ))}
+                              {loadingMore ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                              Load More Images
+                            </Button>
+                          )}
                         </div>
                       ) : (
                         <p className="text-xs text-muted-foreground text-center py-4">

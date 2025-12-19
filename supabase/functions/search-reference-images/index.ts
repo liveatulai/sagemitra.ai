@@ -6,13 +6,32 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Trusted sources for quality images
+const TRUSTED_SOURCES = [
+  'wikipedia.org',
+  'wikimedia.org',
+  'britannica.com',
+  'biography.com',
+  'history.com',
+  'getty',
+  'alamy',
+  'shutterstock',
+  'official',
+  'gov',
+  'edu',
+  'museum',
+  'archive.org',
+  'library',
+  'national',
+];
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { query } = await req.json();
+    const { query, limit = 12, offset = 0, sourceFilter = 'all' } = await req.json();
 
     if (!query || typeof query !== 'string') {
       return new Response(
@@ -30,9 +49,15 @@ serve(async (req) => {
       );
     }
 
-    // Search for portrait images of the person with high accuracy
-    const searchQuery = `${query} official portrait photo high quality`;
-    console.log('Searching for reference images:', searchQuery);
+    // Build search query based on source filter
+    let searchQuery = `${query} official portrait photo high quality`;
+    if (sourceFilter === 'wikipedia') {
+      searchQuery = `${query} site:wikipedia.org OR site:wikimedia.org portrait photo`;
+    } else if (sourceFilter === 'official') {
+      searchQuery = `${query} official portrait photo`;
+    }
+    
+    console.log('Searching for reference images:', searchQuery, 'limit:', limit, 'offset:', offset);
 
     const response = await fetch('https://api.firecrawl.dev/v1/search', {
       method: 'POST',
@@ -42,7 +67,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         query: searchQuery,
-        limit: 10,
+        limit: Math.min(limit + offset + 10, 30), // Fetch more to filter
         scrapeOptions: {
           formats: ['links']
         }
@@ -62,60 +87,91 @@ serve(async (req) => {
     console.log('Firecrawl search response:', JSON.stringify(data).substring(0, 500));
 
     // Extract image URLs from search results
-    const images: string[] = [];
+    const images: { url: string; source: string; trusted: boolean }[] = [];
     const seenUrls = new Set<string>();
 
     // Common image extensions
-    const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
     const isImageUrl = (url: string) => {
       const lower = url.toLowerCase();
       return imageExtensions.some(ext => lower.includes(ext));
     };
 
+    // Check if URL is from a trusted source
+    const isTrustedSource = (url: string) => {
+      const lower = url.toLowerCase();
+      return TRUSTED_SOURCES.some(source => lower.includes(source));
+    };
+
+    // Get source name from URL
+    const getSourceName = (url: string) => {
+      try {
+        const hostname = new URL(url).hostname;
+        return hostname.replace('www.', '').split('.')[0];
+      } catch {
+        return 'unknown';
+      }
+    };
+
     // Process search results to find image URLs
     if (data.data && Array.isArray(data.data)) {
       for (const result of data.data) {
+        // Check metadata for og:image first (usually high quality)
+        if (result.metadata?.ogImage && !seenUrls.has(result.metadata.ogImage)) {
+          const url = result.metadata.ogImage;
+          if (isImageUrl(url)) {
+            seenUrls.add(url);
+            images.push({
+              url,
+              source: getSourceName(result.url || url),
+              trusted: isTrustedSource(result.url || url)
+            });
+          }
+        }
+
         // Check links from scraped pages
         if (result.links && Array.isArray(result.links)) {
           for (const link of result.links) {
-            if (isImageUrl(link) && !seenUrls.has(link) && images.length < 12) {
+            if (isImageUrl(link) && !seenUrls.has(link)) {
               // Filter for likely portrait/face images
               const lower = link.toLowerCase();
               if (lower.includes('portrait') || lower.includes('photo') || 
                   lower.includes('face') || lower.includes('image') ||
-                  lower.includes('wiki') || lower.includes('thumb')) {
+                  lower.includes('wiki') || lower.includes('thumb') ||
+                  lower.includes('upload') || lower.includes('media')) {
                 seenUrls.add(link);
-                images.push(link);
+                images.push({
+                  url: link,
+                  source: getSourceName(link),
+                  trusted: isTrustedSource(link)
+                });
               }
             }
           }
         }
-        
-        // Also check metadata for og:image
-        if (result.metadata?.ogImage && !seenUrls.has(result.metadata.ogImage)) {
-          seenUrls.add(result.metadata.ogImage);
-          images.push(result.metadata.ogImage);
-        }
       }
     }
 
-    // If we didn't find many images, also try to construct Wikipedia image URLs
-    if (images.length < 3) {
-      // Try common Wikipedia/Wikimedia patterns
-      const wikiQuery = query.replace(/\s+/g, '_');
-      const wikiImages = [
-        `https://upload.wikimedia.org/wikipedia/commons/thumb/${wikiQuery}`,
-        `https://en.wikipedia.org/wiki/File:${wikiQuery}.jpg`,
-      ];
-      // These are just patterns, they may not work
-    }
+    // Sort: trusted sources first, then by source name
+    images.sort((a, b) => {
+      if (a.trusted && !b.trusted) return -1;
+      if (!a.trusted && b.trusted) return 1;
+      return a.source.localeCompare(b.source);
+    });
 
-    console.log(`Found ${images.length} reference images`);
+    // Apply offset and limit
+    const paginatedImages = images.slice(offset, offset + limit);
+    const hasMore = images.length > offset + limit;
+
+    console.log(`Found ${images.length} total images, returning ${paginatedImages.length} (offset: ${offset})`);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        images: images.slice(0, 12),
+        images: paginatedImages.map(img => img.url),
+        sources: paginatedImages.map(img => ({ url: img.url, source: img.source, trusted: img.trusted })),
+        total: images.length,
+        hasMore,
         query: searchQuery
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
