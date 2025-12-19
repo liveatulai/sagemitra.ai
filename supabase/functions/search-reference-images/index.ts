@@ -115,83 +115,109 @@ serve(async (req) => {
     }
 
     const searchData = await searchResp.json();
+    console.log("Search response preview:", JSON.stringify(searchData).substring(0, 1000));
+    
     const results: any[] = Array.isArray(searchData?.data) ? searchData.data : [];
 
     const images: { url: string; source: string; trusted: boolean }[] = [];
     const seen = new Set<string>();
 
-    // 2) Ultra-fast: use metadata og:image when present
+    // Helper to add image if valid
+    const addImage = (url: string, sourceUrl?: string) => {
+      if (!url || typeof url !== "string" || seen.has(url)) return;
+      if (!isImageUrl(url)) return;
+      seen.add(url);
+      images.push({
+        url,
+        source: getSourceName(sourceUrl || url),
+        trusted: isTrustedSource(sourceUrl || url),
+      });
+    };
+
+    // 2) Extract from search results: og:image, image field, and url
     for (const r of results) {
-      const og = r?.metadata?.ogImage;
-      if (og && typeof og === "string" && !seen.has(og) && isImageUrl(og)) {
-        seen.add(og);
-        images.push({
-          url: og,
-          source: getSourceName(r.url || og),
-          trusted: isTrustedSource(r.url || og),
-        });
-      }
-      if (r?.url && typeof r.url === "string" && !seen.has(r.url) && isImageUrl(r.url)) {
-        seen.add(r.url);
-        images.push({ url: r.url, source: getSourceName(r.url), trusted: isTrustedSource(r.url) });
-      }
+      // og:image from metadata
+      if (r?.metadata?.ogImage) addImage(r.metadata.ogImage, r.url);
+      if (r?.metadata?.image) addImage(r.metadata.image, r.url);
+      // Direct image URLs
+      if (r?.url) addImage(r.url);
+      // Some results have thumbnail
+      if (r?.thumbnail) addImage(r.thumbnail, r.url);
     }
 
-    // 3) If we still have too few images, scrape ONLY top pages (fast + bounded)
-    // This restores results without going back to the slow scrape-everything approach.
+    console.log(`Images from metadata: ${images.length}`);
+
+    // 3) If we still have too few images, scrape top pages for links
     const wantAtLeast = Math.max(6, Math.min(12, limit + offset));
-    if (images.length < wantAtLeast) {
+    if (images.length < wantAtLeast && results.length > 0) {
       const topUrls = results
         .map((r) => r?.url)
-        .filter((u) => typeof u === "string" && u.startsWith("http"))
+        .filter((u): u is string => typeof u === "string" && u.startsWith("http") && !isImageUrl(u))
         .slice(0, 3);
 
-      console.log("Scraping top pages for image links:", topUrls.length);
+      console.log("Scraping pages for image links:", topUrls);
 
-      const scrapeOne = async (url: string) => {
-        const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            url,
-            formats: ["links"],
-            onlyMainContent: true,
-            // keep it fast; avoid JS waits
-          }),
-        });
+      const scrapeOne = async (pageUrl: string) => {
+        try {
+          const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              url: pageUrl,
+              formats: ["links", "markdown"],
+            }),
+          });
 
-        if (!resp.ok) return { url, links: [] as string[] };
-        const d = await resp.json();
-        const links = (d?.data?.links || d?.links || []) as string[];
-        return { url, links: Array.isArray(links) ? links : [] };
+          if (!resp.ok) {
+            console.log(`Scrape failed for ${pageUrl}: ${resp.status}`);
+            return [];
+          }
+          
+          const d = await resp.json();
+          console.log(`Scrape response for ${pageUrl}:`, JSON.stringify(d).substring(0, 500));
+          
+          // Extract links from response - try multiple paths
+          const links: string[] = [];
+          if (d?.data?.links) links.push(...d.data.links);
+          if (d?.links) links.push(...d.links);
+          
+          // Also extract image URLs from markdown content
+          if (d?.data?.markdown || d?.markdown) {
+            const md = d?.data?.markdown || d?.markdown || "";
+            const imgRegex = /https?:\/\/[^\s"'<>\)]+\.(jpg|jpeg|png|webp)(\?[^\s"'<>\)]*)?/gi;
+            const matches = md.match(imgRegex) || [];
+            links.push(...matches);
+          }
+          
+          return links.filter((l): l is string => typeof l === "string");
+        } catch (e) {
+          console.log(`Scrape error for ${pageUrl}:`, e);
+          return [];
+        }
       };
 
-      const scrapeResults = await Promise.allSettled(
-        topUrls.map((u) => withTimeout(scrapeOne(u), 3500)),
+      // Run scrapes in parallel with timeout
+      const scrapePromises = topUrls.map((u) => 
+        Promise.race([
+          scrapeOne(u),
+          new Promise<string[]>((resolve) => setTimeout(() => resolve([]), 4000))
+        ])
       );
+      
+      const scrapeResults = await Promise.all(scrapePromises);
 
-      for (const settled of scrapeResults) {
-        if (settled.status !== "fulfilled") continue;
-        const { url, links } = settled.value;
+      for (const links of scrapeResults) {
         for (const link of links) {
-          if (!link || typeof link !== "string") continue;
-          if (!isImageUrl(link)) continue;
-          if (seen.has(link)) continue;
-          seen.add(link);
-          images.push({
-            url: link,
-            source: getSourceName(link),
-            trusted: isTrustedSource(url) || isTrustedSource(link),
-          });
-          if (images.length >= wantAtLeast + 10) break; // hard cap
+          addImage(link);
+          if (images.length >= wantAtLeast + 10) break;
         }
       }
     }
 
-    // Sort: trusted first, then stable by host
+    // Sort: trusted first
     images.sort((a, b) => {
       if (a.trusted && !b.trusted) return -1;
       if (!a.trusted && b.trusted) return 1;
