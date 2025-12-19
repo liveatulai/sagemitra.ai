@@ -10,19 +10,42 @@ const corsHeaders = {
 const TRUSTED_SOURCES = [
   "wikipedia.org",
   "wikimedia.org",
+  "commons.wikimedia.org",
   "britannica.com",
   "biography.com",
   "history.com",
   "getty",
-  "alamy",
-  "shutterstock",
-  "official",
-  "gov",
-  "edu",
   "museum",
   "archive.org",
   "library",
   "national",
+  "gov",
+  "edu",
+];
+
+// Sources that frequently return irrelevant / blocked results (and/or are hard to scrape)
+const BLOCKED_HOST_HINTS = [
+  "pinterest.",
+  "instagram.",
+  "facebook.",
+  "tiktok.",
+  "youtube.",
+  "adobe.com",
+  "shutterstock.",
+  "istockphoto.",
+  "depositphotos.",
+  "alamy.",
+];
+
+const BLOCKED_TITLE_HINTS = [
+  "jewelry",
+  "piercing",
+  "shop",
+  "buy",
+  "song",
+  "lyrics",
+  "official video",
+  "video",
 ];
 
 const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"]; // (exclude .gif)
@@ -48,19 +71,10 @@ function getSourceName(url: string) {
 }
 
 async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), ms);
-  try {
-    // @ts-ignore - caller may already use abort; this just provides a hard cap
-    return await Promise.race([
-      p,
-      new Promise<T>((_, reject) =>
-        setTimeout(() => reject(new Error("timeout")), ms),
-      ),
-    ]);
-  } finally {
-    clearTimeout(timeout);
-  }
+  return await Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
+  ]);
 }
 
 serve(async (req) => {
@@ -80,55 +94,96 @@ serve(async (req) => {
     if (!apiKey) {
       console.error("FIRECRAWL_API_KEY not configured");
       return new Response(
-        JSON.stringify({ success: false, error: "Firecrawl not configured. Please connect Firecrawl in settings." }),
+        JSON.stringify({
+          success: false,
+          error: "Firecrawl not configured. Please connect Firecrawl in settings.",
+        }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // 1) Fast search
-    // Use ONLY the provided name/query to keep results relevant.
-    // Source filters may narrow scope but we avoid adding broad terms like "portrait"/"photo".
-    let searchQuery = `${query}`.trim();
-    if (sourceFilter === "wikipedia") searchQuery = `${query} site:wikipedia.org`.trim();
-    if (sourceFilter === "official") searchQuery = `${query} official`.trim();
-    if (sourceFilter === "google") searchQuery = `${query}`.trim();
+    // Fast + robust search strategy
+    // - Keep query as-is (user requested)
+    // - Bias to Wikipedia/Wikimedia to avoid irrelevant brand collisions (e.g. "Buddha" jewelry/song)
+    // - Make pagination stable by fetching more results as offset grows
 
-    console.log("Image search (fast):", searchQuery, "limit:", limit, "offset:", offset);
+    const baseQuery = `${query}`.trim();
+    const fetchLimit = Math.min(50, Math.max(12, offset + limit + 12));
 
-    const searchResp = await fetch("https://api.firecrawl.dev/v1/search", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        query: searchQuery,
-        limit: 8, // small for speed
-      }),
-    });
+    const isBlockedResult = (r: any) => {
+      const url = `${r?.url || ""}`.toLowerCase();
+      const title = `${r?.title || ""}`.toLowerCase();
+      return (
+        BLOCKED_HOST_HINTS.some((h) => url.includes(h)) ||
+        BLOCKED_TITLE_HINTS.some((h) => title.includes(h))
+      );
+    };
 
-    if (!searchResp.ok) {
-      const errorData = await searchResp.json().catch(() => ({}));
-      console.error("Firecrawl search error:", searchResp.status, errorData);
-      return new Response(JSON.stringify({ success: false, error: errorData.error || "Search failed" }), {
-        status: searchResp.status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const runSearch = async (q: string) => {
+      const resp = await fetch("https://api.firecrawl.dev/v1/search", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query: q, limit: fetchLimit }),
       });
+
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({}));
+        console.error("Firecrawl search error:", resp.status, errorData);
+        throw new Error(errorData.error || `Search failed (${resp.status})`);
+      }
+
+      const d = await resp.json();
+      const arr: any[] = Array.isArray(d?.data) ? d.data : [];
+      return arr.filter((r) => !isBlockedResult(r));
+    };
+
+    const queries: string[] = [];
+
+    if (sourceFilter === "wikipedia") {
+      queries.push(`${baseQuery} site:wikipedia.org`);
+    } else if (sourceFilter === "official") {
+      queries.push(`${baseQuery} official`);
+      // extra bias to prevent brand-name collisions
+      queries.push(`${baseQuery} site:wikipedia.org`);
+    } else {
+      // "all" or "google"
+      queries.push(`${baseQuery} site:wikipedia.org`);
+      queries.push(`${baseQuery} site:wikimedia.org`);
+      queries.push(baseQuery);
     }
 
-    const searchData = await searchResp.json();
-    console.log("Search response preview:", JSON.stringify(searchData).substring(0, 1000));
-    
-    const results: any[] = Array.isArray(searchData?.data) ? searchData.data : [];
+    console.log("Image search queries:", queries, "limit:", limit, "offset:", offset, "fetchLimit:", fetchLimit);
+
+    const settled = await Promise.allSettled(queries.map((q) => runSearch(q)));
+    const results: any[] = [];
+    for (const s of settled) {
+      if (s.status === "fulfilled") results.push(...s.value);
+    }
+
+    // De-dup results by URL
+    const seenResultUrl = new Set<string>();
+    const uniqueResults = results.filter((r) => {
+      const u = `${r?.url || ""}`;
+      if (!u) return false;
+      if (seenResultUrl.has(u)) return false;
+      seenResultUrl.add(u);
+      return true;
+    });
 
     const images: { url: string; source: string; trusted: boolean }[] = [];
-    const seen = new Set<string>();
+    const seenImage = new Set<string>();
 
-    // Helper to add image if valid
     const addImage = (url: string, sourceUrl?: string) => {
-      if (!url || typeof url !== "string" || seen.has(url)) return;
+      if (!url || typeof url !== "string" || seenImage.has(url)) return;
       if (!isImageUrl(url)) return;
-      seen.add(url);
+
+      const lower = url.toLowerCase();
+      if (BLOCKED_HOST_HINTS.some((h) => lower.includes(h))) return;
+
+      seenImage.add(url);
       images.push({
         url,
         source: getSourceName(sourceUrl || url),
@@ -136,85 +191,72 @@ serve(async (req) => {
       });
     };
 
-    // 2) Extract from search results: og:image, image field, and url
-    for (const r of results) {
-      // og:image from metadata
+    // Extract images from metadata/thumbnail/direct urls
+    for (const r of uniqueResults) {
       if (r?.metadata?.ogImage) addImage(r.metadata.ogImage, r.url);
       if (r?.metadata?.image) addImage(r.metadata.image, r.url);
-      // Direct image URLs
-      if (r?.url) addImage(r.url);
-      // Some results have thumbnail
       if (r?.thumbnail) addImage(r.thumbnail, r.url);
+      if (r?.url) addImage(r.url, r.url);
     }
 
     console.log(`Images from metadata: ${images.length}`);
 
-    // 3) If we still have too few images, scrape top pages for links
-    const wantAtLeast = Math.max(6, Math.min(12, limit + offset));
-    if (images.length < wantAtLeast && results.length > 0) {
-      const topUrls = results
+    // Lightweight fallback: scrape ONLY the first Wikipedia/Wikimedia page
+    const wantAtLeast = Math.max(6, Math.min(18, offset + limit));
+    if (images.length < wantAtLeast) {
+      const preferredPage = uniqueResults
         .map((r) => r?.url)
-        .filter((u): u is string => typeof u === "string" && u.startsWith("http") && !isImageUrl(u))
-        .slice(0, 3);
+        .find((u: any) =>
+          typeof u === "string" &&
+          u.startsWith("http") &&
+          (u.includes("wikipedia.org/") || u.includes("wikimedia.org/")) &&
+          !isImageUrl(u),
+        );
 
-      console.log("Scraping pages for image links:", topUrls);
+      if (preferredPage) {
+        console.log("Scraping preferred page for images:", preferredPage);
 
-      const scrapeOne = async (pageUrl: string) => {
         try {
-          const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              url: pageUrl,
-              formats: ["links", "markdown"],
+          const scrapeResp = await withTimeout(
+            fetch("https://api.firecrawl.dev/v1/scrape", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                url: preferredPage,
+                formats: ["links", "markdown"],
+                onlyMainContent: true,
+              }),
             }),
-          });
+            4500,
+          );
 
-          if (!resp.ok) {
-            console.log(`Scrape failed for ${pageUrl}: ${resp.status}`);
-            return [];
-          }
-          
-          const d = await resp.json();
-          console.log(`Scrape response for ${pageUrl}:`, JSON.stringify(d).substring(0, 500));
-          
-          // Extract links from response - try multiple paths
-          const links: string[] = [];
-          if (d?.data?.links) links.push(...d.data.links);
-          if (d?.links) links.push(...d.links);
-          
-          // Also extract image URLs from markdown content
-          if (d?.data?.markdown || d?.markdown) {
+          if (!scrapeResp.ok) {
+            console.log(`Scrape failed for ${preferredPage}: ${scrapeResp.status}`);
+          } else {
+            const d = await scrapeResp.json();
+
+            const links: string[] = [];
+            if (d?.data?.links) links.push(...d.data.links);
+            if (d?.links) links.push(...d.links);
+
             const md = d?.data?.markdown || d?.markdown || "";
-            const imgRegex = /https?:\/\/[^\s"'<>\)]+\.(jpg|jpeg|png|webp)(\?[^\s"'<>\)]*)?/gi;
-            const matches = md.match(imgRegex) || [];
-            links.push(...matches);
+            if (typeof md === "string" && md.length) {
+              const imgRegex = /https?:\/\/[^\s"'<>\)]+\.(jpg|jpeg|png|webp)(\?[^\s"'<>\)]*)?/gi;
+              links.push(...(md.match(imgRegex) || []));
+            }
+
+            for (const l of links) {
+              addImage(l, preferredPage);
+              if (images.length >= wantAtLeast + 12) break;
+            }
+
+            console.log(`Images after preferred scrape: ${images.length}`);
           }
-          
-          return links.filter((l): l is string => typeof l === "string");
         } catch (e) {
-          console.log(`Scrape error for ${pageUrl}:`, e);
-          return [];
-        }
-      };
-
-      // Run scrapes in parallel with timeout
-      const scrapePromises = topUrls.map((u) => 
-        Promise.race([
-          scrapeOne(u),
-          new Promise<string[]>((resolve) => setTimeout(() => resolve([]), 4000))
-        ])
-      );
-      
-      const scrapeResults = await Promise.all(scrapePromises);
-
-      for (const links of scrapeResults) {
-        for (const link of links) {
-          addImage(link);
-          if (images.length >= wantAtLeast + 10) break;
+          console.log("Preferred scrape error:", e);
         }
       }
     }
@@ -238,7 +280,7 @@ serve(async (req) => {
         sources: paginatedImages,
         total: images.length,
         hasMore,
-        query: searchQuery,
+        query: baseQuery,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
