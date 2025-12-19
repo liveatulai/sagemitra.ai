@@ -111,7 +111,7 @@ export default function OnboardingFlow() {
           .single();
 
         if (session) {
-          navigate(`/chat?session=${session.id}`);
+          navigate(`/chat/${session.id}`);
         }
       }
 
