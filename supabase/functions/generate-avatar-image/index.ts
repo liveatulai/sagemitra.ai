@@ -52,67 +52,71 @@ serve(async (req) => {
     const validatedData = imageGenSchema.parse(body);
     const { prompt, avatarId } = validatedData;
     
-    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-    if (!OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY not configured');
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    if (!LOVABLE_API_KEY) {
+      throw new Error('LOVABLE_API_KEY not configured');
     }
 
     // Enhanced prompt for photo-realistic portraits of the actual person/character
-    const enhancedPrompt = `A professional studio portrait photograph of ${prompt}. 
+    const enhancedPrompt = `Generate a photo-realistic professional portrait of ${prompt}.
 
-The image must accurately depict ${prompt} with their recognizable features and appearance.
-- High-end professional headshot photography style
-- Soft studio lighting with subtle rim light
-- Dark neutral gradient background
-- Sharp focus on the face, especially the eyes
+IMPORTANT: This must look exactly like ${prompt} - their actual recognizable face and features.
+
+Style requirements:
+- Professional studio headshot photography
+- Soft key lighting with subtle fill light
+- Dark gradient background (charcoal to black)
+- Sharp focus on the eyes and face
 - Dignified, thoughtful expression
-- Photo-realistic quality matching editorial magazine portraits
-- Suitable for a circular avatar/profile picture
-- The person should be instantly recognizable as ${prompt}`;
+- High-end editorial magazine quality
+- Circular avatar composition
+- The person must be instantly recognizable as ${prompt}
+- Ultra realistic, NOT illustration or cartoon`;
 
-    console.log('Generating image with OpenAI gpt-image-1:', enhancedPrompt);
+    console.log('Generating image with Lovable AI Gemini:', enhancedPrompt);
 
-    // Generate image using OpenAI's gpt-image-1 model
-    const response = await fetch('https://api.openai.com/v1/images/generations', {
+    // Generate image using Lovable AI with Gemini model
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-image-1',
-        prompt: enhancedPrompt,
-        n: 1,
-        size: '1024x1024',
-        quality: 'high'
-        // Note: gpt-image-1 always returns base64, no response_format needed
+        model: 'google/gemini-2.5-flash-image-preview',
+        messages: [{
+          role: 'user',
+          content: enhancedPrompt
+        }],
+        modalities: ['image', 'text']
       }),
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('OpenAI image generation error:', response.status, errorData);
+      const errorText = await response.text();
+      console.error('Lovable AI image generation error:', response.status, errorText);
       
-      if (response.status === 402 || response.status === 401) {
-        throw new Error('OpenAI API key issue. Please check your API key configuration.');
+      if (response.status === 402) {
+        throw new Error('Insufficient credits for image generation. Please add credits to your workspace in Settings → Workspace → Usage.');
       }
       if (response.status === 429) {
         throw new Error('Rate limit exceeded. Please try again in a few moments.');
       }
       
-      throw new Error(`Image generation failed: ${errorData?.error?.message || response.status}`);
+      throw new Error(`Image generation failed: ${response.status}`);
     }
 
     const data = await response.json();
-    const base64Image = data.data?.[0]?.b64_json;
+    const base64Image = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
     
     if (!base64Image) {
-      console.error('No image in OpenAI response:', data);
+      console.error('No image in Lovable AI response:', JSON.stringify(data).substring(0, 500));
       throw new Error('No image in response');
     }
 
-    // Convert base64 to buffer
-    const imageBuffer = Uint8Array.from(atob(base64Image), c => c.charCodeAt(0));
+    // Extract base64 data
+    const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
+    const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
 
     // Use authenticated userId for storage path
     const fileName = `${avatarId || Date.now()}.png`;
