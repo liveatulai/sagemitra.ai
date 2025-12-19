@@ -8,7 +8,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Schema now includes optional referenceImageUrl
 const imageGenSchema = z.object({
   prompt: z.string().min(1).max(5000),
   avatarId: z.string().uuid(),
@@ -52,20 +51,48 @@ serve(async (req) => {
     const validatedData = imageGenSchema.parse(body);
     const { prompt, avatarId, referenceImageUrl } = validatedData;
     
-    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-    if (!OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY not configured');
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    if (!LOVABLE_API_KEY) {
+      throw new Error('LOVABLE_API_KEY not configured');
     }
 
     let imagePrompt: string;
+    let base64ImageData: string | undefined;
+
+    // Download reference image if provided
+    if (referenceImageUrl) {
+      try {
+        console.log('Downloading reference image...');
+        const imageResponse = await fetch(referenceImageUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'image/*',
+          }
+        });
+
+        if (imageResponse.ok) {
+          const arrayBuffer = await imageResponse.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+          let binary = '';
+          for (let i = 0; i < uint8Array.length; i++) {
+            binary += String.fromCharCode(uint8Array[i]);
+          }
+          base64ImageData = btoa(binary);
+          console.log('Successfully converted image to base64, size:', base64ImageData.length);
+        }
+      } catch (err) {
+        console.error('Error downloading reference image:', err);
+      }
+    }
 
     // Build the image prompt
-    if (referenceImageUrl) {
-      console.log('Generating avatar with reference context for:', prompt);
-      
-      imagePrompt = `Create a professional portrait avatar for "${prompt}".
+    if (base64ImageData) {
+      console.log('Generating avatar from reference image');
+      imagePrompt = `Transform this reference image into a professional avatar portrait for "${prompt}".
 
-STYLE REQUIREMENTS:
+Use the person's face from the reference image as the basis.
+
+APPLY THIS STYLE:
 - Professional studio portrait with warm cinematic color grading
 - Golden undertones, slightly desaturated timeless look
 - Soft vignette effect around edges
@@ -80,7 +107,6 @@ STYLE REQUIREMENTS:
 OUTPUT: Single styled portrait. No text or borders.`;
     } else {
       console.log('Generating avatar from text prompt:', prompt);
-      
       imagePrompt = `Generate a photorealistic portrait of the REAL historical figure "${prompt}".
 
 CRITICAL - ACCURACY REQUIREMENTS:
@@ -95,7 +121,7 @@ COMPOSITION:
 - Face occupies approximately 60% of frame height
 - Square aspect ratio, suitable for profile picture use
 
-VISUAL STYLE (consistent with existing avatars):
+VISUAL STYLE:
 - Warm cinematic color grading with golden undertones
 - Soft vignette effect
 - Professional studio lighting: diffused key light from front-left, subtle fill
@@ -109,102 +135,97 @@ VISUAL STYLE (consistent with existing avatars):
 OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
     }
 
-    console.log('Calling OpenAI gpt-image-1 API');
+    console.log('Calling Lovable AI with Nano banana model');
+
+    // Build request body for Lovable AI gateway
+    const messages: any[] = [];
     
-    const response = await fetch('https://api.openai.com/v1/images/generations', {
+    if (base64ImageData) {
+      // With reference image
+      messages.push({
+        role: "user",
+        content: [
+          { type: "text", text: imagePrompt },
+          { 
+            type: "image_url", 
+            image_url: { 
+              url: `data:image/jpeg;base64,${base64ImageData}` 
+            } 
+          }
+        ]
+      });
+    } else {
+      // Text only
+      messages.push({
+        role: "user",
+        content: imagePrompt
+      });
+    }
+    
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-image-1',
-        prompt: imagePrompt,
-        n: 1,
-        size: '1024x1024',
-        quality: 'high',
+        model: 'google/gemini-2.5-flash-image-preview',
+        messages,
+        modalities: ['image', 'text'],
       }),
     });
 
     if (!response.ok) {
       const raw = await response.text();
-      console.error("OpenAI image generation error:", response.status, raw);
-
-      let retryAfterSeconds: number | null = null;
-      const retryHeader = response.headers.get('retry-after');
-      if (retryHeader) {
-        retryAfterSeconds = parseInt(retryHeader, 10);
-      }
+      console.error("Lovable AI error:", response.status, raw);
 
       let friendly = `Image generation failed (${response.status}).`;
-
-      // Surface common OpenAI billing/quota errors clearly
-      try {
-        const parsed = JSON.parse(raw);
-        const code = parsed?.error?.code as string | undefined;
-        const msg = parsed?.error?.message as string | undefined;
-
-        if (code === "billing_hard_limit_reached") {
-          friendly = "OpenAI billing hard limit reached. Please add billing/credits to your OpenAI account, or switch image generation to Lovable Nano banana.";
-        } else if (msg && /quota|billing/i.test(msg)) {
-          friendly = msg;
-        }
-      } catch {
-        // ignore
-      }
-
+      
       if (response.status === 429) {
-        friendly = "Rate limit reached. Please wait a moment and try again.";
-      } else if (response.status === 403) {
-        friendly = "API access denied (billing/quota may be disabled).";
+        friendly = "Rate limit reached. Please try again in a moment.";
+      } else if (response.status === 402) {
+        friendly = "Lovable AI credits exhausted. Please add credits to your workspace.";
       } else if (response.status === 401) {
-        friendly = "OpenAI API key is invalid or unauthorized.";
+        friendly = "API key is invalid or unauthorized.";
       }
 
       return new Response(
-        JSON.stringify({
-          error: friendly,
-          status: response.status,
-          retryAfterSeconds,
-        }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: response.status,
-        }
+        JSON.stringify({ error: friendly, status: response.status }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: response.status }
       );
     }
 
     const data = await response.json();
-    console.log('OpenAI response received');
-    
-    // gpt-image-1 returns base64 directly
-    const generatedImageData = data.data?.[0]?.b64_json;
-    const imageUrl = data.data?.[0]?.url;
-    
-    let imageBuffer: Uint8Array;
-    
-    if (generatedImageData) {
-      // Base64 response
-      imageBuffer = Uint8Array.from(atob(generatedImageData), c => c.charCodeAt(0));
-    } else if (imageUrl) {
-      // URL response - download the image
-      console.log('Downloading generated image from URL');
-      const imageResponse = await fetch(imageUrl);
-      if (!imageResponse.ok) {
-        throw new Error('Failed to download generated image');
+    console.log('Lovable AI response received');
+
+    // Extract image from response - Nano banana returns images in the message
+    const images = data.choices?.[0]?.message?.images;
+    let generatedImageData: string | undefined;
+
+    if (images && images.length > 0) {
+      const imageUrl = images[0]?.image_url?.url;
+      if (imageUrl && imageUrl.startsWith('data:image')) {
+        // Extract base64 from data URL
+        const base64Match = imageUrl.match(/^data:image\/[^;]+;base64,(.+)$/);
+        if (base64Match) {
+          generatedImageData = base64Match[1];
+        }
       }
-      const arrayBuffer = await imageResponse.arrayBuffer();
-      imageBuffer = new Uint8Array(arrayBuffer);
-    } else {
-      console.error('No image in OpenAI response:', JSON.stringify(data).substring(0, 500));
+    }
+
+    if (!generatedImageData) {
+      console.error('No image in response:', JSON.stringify(data).substring(0, 500));
       throw new Error('No image in response');
     }
+
+    // Convert base64 to buffer
+    const imageBuffer = Uint8Array.from(atob(generatedImageData), c => c.charCodeAt(0));
 
     // Upload to storage
     const fileName = `${avatarId || Date.now()}.png`;
     const filePath = `${userId}/${fileName}`;
 
-    const { data: uploadData, error: uploadError } = await supabase.storage
+    const { error: uploadError } = await supabase.storage
       .from('avatar-images')
       .upload(filePath, imageBuffer, {
         contentType: 'image/png',
@@ -225,20 +246,14 @@ OUTPUT: Single photorealistic portrait. No text, watermarks, or borders.`;
 
     return new Response(
       JSON.stringify({ imageUrl: publicUrl }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200 
-      }
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     );
 
   } catch (error) {
     console.error('Error in generate-avatar-image function:', error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500 
-      }
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     );
   }
 });
