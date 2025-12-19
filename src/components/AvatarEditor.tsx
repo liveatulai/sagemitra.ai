@@ -30,9 +30,9 @@ const avatarSchema = z.object({
     .optional()
     .or(z.literal("")),
   personality_prompt: z.string()
-    .trim()
-    .min(1, "Personality Prompt is required")
-    .max(10000, "Personality Prompt must be less than 10,000 characters"),
+    .max(10000, "Personality Prompt must be less than 10,000 characters")
+    .optional()
+    .or(z.literal("")),
   knowledge_base: z.string()
     .max(50000, "Knowledge Base must be less than 50,000 characters")
     .optional()
@@ -560,7 +560,7 @@ export default function AvatarEditor({ avatar, open, onOpenChange, onSaved }: Av
               
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="personality" className="text-sm font-medium">Personality Prompt (System Prompt) *</Label>
+                  <Label htmlFor="personality" className="text-sm font-medium">Personality Prompt (Optional Override)</Label>
                   <Button
                     variant="ghost"
                     size="sm"
