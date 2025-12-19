@@ -108,6 +108,10 @@ Single photorealistic portrait. No text, watermarks, or borders.`;
 
       if (response.status !== 429) break;
 
+      // If this was the last attempt, don't consume the body here;
+      // we'll read it once after the loop for consistent error handling.
+      if (attempt === 2) break;
+
       // Backoff with jitter (0.5s, 1.5s, 3.5s approx)
       const baseDelayMs = [500, 1500, 3500][attempt] ?? 3500;
       const jitterMs = Math.floor(Math.random() * 250);
