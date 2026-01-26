@@ -41,6 +41,82 @@ async function callGeminiAPI(systemPrompt: string, messages: Array<{role: string
   return response;
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRetryAfterSeconds(retryAfter: string | null): number | null {
+  if (!retryAfter) return null;
+  const s = retryAfter.trim();
+
+  // Numeric seconds
+  const asNum = Number(s);
+  if (Number.isFinite(asNum) && asNum >= 0) return asNum;
+
+  // HTTP-date
+  const ts = Date.parse(s);
+  if (!Number.isNaN(ts)) {
+    const deltaMs = ts - Date.now();
+    return Math.max(0, Math.ceil(deltaMs / 1000));
+  }
+
+  return null;
+}
+
+async function callGeminiAPIWithRetry(
+  systemPrompt: string,
+  messages: Array<{ role: string; content: string }>,
+  apiKey: string,
+  opts?: { maxAttempts?: number }
+) {
+  const maxAttempts = Math.max(1, Math.min(6, opts?.maxAttempts ?? 4));
+  let lastResponse: Response | null = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const resp = await callGeminiAPI(systemPrompt, messages, apiKey);
+    lastResponse = resp;
+
+    if (resp.ok) return resp;
+
+    // Only retry transient throttling.
+    if (resp.status !== 429) return resp;
+
+    // We must consume the body before retrying (avoid resource leaks).
+    let errorText = "";
+    try {
+      errorText = await resp.text();
+    } catch {
+      errorText = "";
+    }
+
+    const classification = classifyGemini429(errorText);
+    if (classification.kind !== "rate_limit") {
+      // Quota/billing exhausted: don't retry.
+      return new Response(errorText || "", {
+        status: resp.status,
+        headers: resp.headers,
+      });
+    }
+
+    if (attempt === maxAttempts) {
+      return new Response(errorText || "", {
+        status: resp.status,
+        headers: resp.headers,
+      });
+    }
+
+    const retryAfter = parseRetryAfterSeconds(resp.headers.get("Retry-After"));
+    const baseMs = 600 * Math.pow(2, attempt - 1); // 600ms, 1200ms, 2400ms...
+    const jitterMs = Math.floor(Math.random() * 250);
+    const waitMs = retryAfter != null ? retryAfter * 1000 + jitterMs : baseMs + jitterMs;
+    console.log(`Gemini 429 rate limit (attempt ${attempt}/${maxAttempts}). Retrying after ${waitMs}ms`);
+    await sleep(waitMs);
+  }
+
+  // Fallback (shouldn't happen)
+  return lastResponse ?? await callGeminiAPI(systemPrompt, messages, apiKey);
+}
+
 function classifyGemini429(errorText: string) {
   // Gemini/Vertex can return HTTP 429 for multiple reasons:
   // - transient rate limiting (retry/backoff helps)
@@ -286,8 +362,8 @@ BONDING STYLE: ${profile.bonding_style}`;
       messages.push({ role: "user", content: message });
     }
 
-    // Call Gemini API directly
-    const aiResponse = await callGeminiAPI(systemPrompt, messages, GEMINI_API_KEY);
+    // Call Gemini API directly (with retry/backoff for transient 429 throttling)
+    const aiResponse = await callGeminiAPIWithRetry(systemPrompt, messages, GEMINI_API_KEY, { maxAttempts: 4 });
 
     if (!aiResponse.ok) {
       let errorText = "";
