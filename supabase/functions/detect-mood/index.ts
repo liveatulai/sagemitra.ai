@@ -12,6 +12,37 @@ serve(async (req) => {
   }
 
   try {
+    // Validate authentication
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    
+    // Create client with user's auth token to validate ownership
+    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } }
+    });
+
+    // Verify user authentication
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+    
+    if (authError || !user) {
+      console.error("Authentication failed:", authError);
+      return new Response(
+        JSON.stringify({ error: "Authentication failed" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const userId = user.id;
+    
     const { messageText, sessionId, messageId } = await req.json();
 
     if (!messageText || !sessionId || !messageId) {
@@ -21,9 +52,31 @@ serve(async (req) => {
       );
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // Verify session ownership - user must own the session
+    const { data: session, error: sessionError } = await supabaseAuth
+      .from("chat_sessions")
+      .select("user_id")
+      .eq("id", sessionId)
+      .maybeSingle();
+
+    if (sessionError || !session) {
+      console.error("Session not found:", sessionError);
+      return new Response(
+        JSON.stringify({ error: "Session not found" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (session.user_id !== userId) {
+      console.error("Session ownership mismatch:", { sessionUserId: session.user_id, requestUserId: userId });
+      return new Response(
+        JSON.stringify({ error: "Forbidden - you do not own this session" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Use service role for inserting mood logs (bypasses RLS)
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Mood detection keywords
     const moodKeywords = {
