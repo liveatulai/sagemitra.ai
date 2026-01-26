@@ -42,21 +42,37 @@ async function callGeminiAPI(systemPrompt: string, messages: Array<{role: string
 }
 
 function classifyGemini429(errorText: string) {
-  const t = (errorText || "").toLowerCase();
+  // Gemini/Vertex can return HTTP 429 for multiple reasons:
+  // - transient rate limiting (retry/backoff helps)
+  // - quota/billing issues (retry won't help)
+  // IMPORTANT: The string "RESOURCE_EXHAUSTED" is commonly returned for *rate limiting*
+  // as well, so we do NOT treat it as a billing/quota exhausted signal by itself.
 
-  // Gemini often returns 429 for both true rate limiting and quota/billing exhaustion.
-  // If quota is 0 or billing is required, retrying won't help.
-  const isQuotaExhausted =
-    t.includes("check your plan and billing details") ||
-    t.includes("resource_exhausted") ||
-    t.includes("quota exceeded") ||
-    t.includes("limit: 0");
+  const raw = (errorText || "").trim();
+  let normalized = raw;
 
-  // If it looks like quota is exhausted, treat separately from transient rate limiting.
-  if (isQuotaExhausted) {
-    return { kind: "quota" as const };
+  // Try to parse JSON error payloads so we can inspect the message more reliably.
+  try {
+    const parsed = JSON.parse(raw);
+    const msg = parsed?.error?.message ?? "";
+    const status = parsed?.error?.status ?? "";
+    normalized = `${status} ${msg} ${raw}`;
+  } catch {
+    // ignore
   }
 
+  const t = normalized.toLowerCase();
+
+  // Strong signals that it's NOT just transient throttling.
+  const looksLikeQuotaOrBilling =
+    t.includes("check your plan and billing details") ||
+    t.includes("billing") ||
+    t.includes("payment required") ||
+    t.includes("quota exceeded") ||
+    t.includes("insufficient quota") ||
+    t.includes("limit: 0");
+
+  if (looksLikeQuotaOrBilling) return { kind: "quota" as const };
   return { kind: "rate_limit" as const };
 }
 
