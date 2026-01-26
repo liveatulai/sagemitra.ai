@@ -45,7 +45,7 @@ export default function Feedback() {
   const loadFeedback = async () => {
     const { data, error } = await supabase
       .from('user_feedback')
-      .select('*, profiles(full_name)')
+      .select('id, title, message, type, status, upvotes, created_at')
       .order('upvotes', { ascending: false })
       .order('created_at', { ascending: false });
     
@@ -112,50 +112,25 @@ export default function Feedback() {
 
     setLoading(true);
     try {
-      // Check if already upvoted
-      const { data: existing } = await supabase
-        .from('feedback_upvotes')
-        .select('id')
-        .eq('feedback_id', feedbackId)
-        .eq('user_id', user.id)
-        .maybeSingle();
+      // Use atomic database function to prevent race conditions
+      const { data, error } = await supabase.rpc('toggle_feedback_upvote', {
+        p_feedback_id: feedbackId
+      });
 
-      if (existing) {
-        // Remove upvote
-        await supabase.from('feedback_upvotes').delete().eq('id', existing.id);
-        // Decrease upvote count
-        const { data: feedback } = await supabase
-          .from('user_feedback')
-          .select('upvotes')
-          .eq('id', feedbackId)
-          .single();
-        if (feedback) {
-          await supabase
-            .from('user_feedback')
-            .update({ upvotes: Math.max(0, (feedback.upvotes || 0) - 1) })
-            .eq('id', feedbackId);
-        }
-        toast.success("Upvote removed");
-      } else {
-        // Add upvote
-        await supabase.from('feedback_upvotes').insert({
-          feedback_id: feedbackId,
-          user_id: user.id
-        });
-        // Increase upvote count
-        const { data: feedback } = await supabase
-          .from('user_feedback')
-          .select('upvotes')
-          .eq('id', feedbackId)
-          .single();
-        if (feedback) {
-          await supabase
-            .from('user_feedback')
-            .update({ upvotes: (feedback.upvotes || 0) + 1 })
-            .eq('id', feedbackId);
-        }
-        toast.success("Upvoted!");
+      if (error) {
+        console.error("Upvote error:", error);
+        toast.error(error.message || "Failed to upvote");
+        return;
       }
+
+      const result = data as { success: boolean; action?: string; upvotes?: number; error?: string };
+      
+      if (!result.success) {
+        toast.error(result.error || "Failed to upvote");
+        return;
+      }
+
+      toast.success(result.action === 'added' ? "Upvoted!" : "Upvote removed");
       loadFeedback();
     } catch (error: any) {
       console.error("Upvote error:", error);
@@ -274,7 +249,7 @@ export default function Feedback() {
                   <div className="flex-1">
                     <CardTitle className="text-lg">{item.title}</CardTitle>
                     <CardDescription>
-                      by {item.profiles?.full_name || "Anonymous"}
+                      by Community Member
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">

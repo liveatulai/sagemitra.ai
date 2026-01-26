@@ -441,6 +441,13 @@ export type Database = {
             foreignKeyName: "feature_bids_feedback_id_fkey"
             columns: ["feedback_id"]
             isOneToOne: false
+            referencedRelation: "public_feedback"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feature_bids_feedback_id_fkey"
+            columns: ["feedback_id"]
+            isOneToOne: false
             referencedRelation: "user_feedback"
             referencedColumns: ["id"]
           },
@@ -466,6 +473,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "feedback_upvotes_feedback_id_fkey"
+            columns: ["feedback_id"]
+            isOneToOne: false
+            referencedRelation: "public_feedback"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "feedback_upvotes_feedback_id_fkey"
             columns: ["feedback_id"]
@@ -860,7 +874,39 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      public_feedback: {
+        Row: {
+          author_display: string | null
+          created_at: string | null
+          id: string | null
+          message: string | null
+          status: string | null
+          title: string | null
+          type: string | null
+          upvotes: number | null
+        }
+        Insert: {
+          author_display?: never
+          created_at?: string | null
+          id?: string | null
+          message?: string | null
+          status?: string | null
+          title?: string | null
+          type?: string | null
+          upvotes?: number | null
+        }
+        Update: {
+          author_display?: never
+          created_at?: string | null
+          id?: string | null
+          message?: string | null
+          status?: string | null
+          title?: string | null
+          type?: string | null
+          upvotes?: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       adjust_user_credits: {
@@ -890,6 +936,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      toggle_feedback_upvote: { Args: { p_feedback_id: string }; Returns: Json }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
