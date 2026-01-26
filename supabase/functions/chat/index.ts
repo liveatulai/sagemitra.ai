@@ -41,6 +41,25 @@ async function callGeminiAPI(systemPrompt: string, messages: Array<{role: string
   return response;
 }
 
+function classifyGemini429(errorText: string) {
+  const t = (errorText || "").toLowerCase();
+
+  // Gemini often returns 429 for both true rate limiting and quota/billing exhaustion.
+  // If quota is 0 or billing is required, retrying won't help.
+  const isQuotaExhausted =
+    t.includes("check your plan and billing details") ||
+    t.includes("resource_exhausted") ||
+    t.includes("quota exceeded") ||
+    t.includes("limit: 0");
+
+  // If it looks like quota is exhausted, treat separately from transient rate limiting.
+  if (isQuotaExhausted) {
+    return { kind: "quota" as const };
+  }
+
+  return { kind: "rate_limit" as const };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -265,10 +284,22 @@ BONDING STYLE: ${profile.bonding_style}`;
       console.error("Gemini API error:", aiResponse.status, errorText);
       
       if (aiResponse.status === 429) {
+        const classification = classifyGemini429(errorText);
+
+        if (classification.kind === "quota") {
+          return new Response(
+            JSON.stringify({
+              error: "AI quota/billing exhausted for the configured provider key.",
+              code: "AI_QUOTA_EXHAUSTED",
+            }),
+            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
         return new Response(
-          JSON.stringify({ 
+          JSON.stringify({
             error: "Rate limit exceeded. Please try again in a few moments.",
-            code: "E004" 
+            code: "E004",
           }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );

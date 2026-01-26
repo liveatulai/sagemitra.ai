@@ -359,6 +359,10 @@ export default function ChatInterface() {
           toast.error("Insufficient credits for AI chat. Please add credits to your workspace in Settings → Workspace → Usage.");
           setSending(false);
           return;
+        } else if (errorCode === 'AI_QUOTA_EXHAUSTED') {
+          toast.error("AI quota/billing exhausted for the current AI key. Please update billing/quota for the key (or switch provider).");
+          setSending(false);
+          return;
         } else if (errorCode === 'E004' || response.status === 429) {
           toast.error("Rate limit exceeded. Please try again in a few moments.");
           setSending(false);
@@ -468,6 +472,8 @@ export default function ChatInterface() {
         
         if (errorCode === 'E005' || response.status === 402) {
           toast.error("Insufficient credits for AI chat. Please add credits to your workspace.");
+        } else if (errorCode === 'AI_QUOTA_EXHAUSTED') {
+          toast.error("AI quota/billing exhausted for the current AI key. Please update billing/quota for the key (or switch provider).");
         } else if (errorCode === 'E004' || response.status === 429) {
           toast.error("Rate limit exceeded. Please try again in a few moments.");
         } else {
