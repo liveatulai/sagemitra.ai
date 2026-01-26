@@ -133,13 +133,25 @@ All colors MUST be HSL.
     @apply border-border;
   }
 
-  html,
+  html {
+    @apply bg-background text-foreground;
+    overflow-x: hidden;
+    overflow-y: auto;
+    max-width: 100vw;
+    height: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+
   body {
     @apply bg-background text-foreground;
-    overflow-x: hidden !important;
+    overflow-x: hidden;
+    overflow-y: auto;
     max-width: 100vw;
-    overscroll-behavior-y: contain;
+    min-height: 100%;
+    overscroll-behavior-x: none;
     padding-bottom: env(safe-area-inset-bottom, 0);
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
   }
 
   .app-container {
